@@ -1,0 +1,20 @@
+#!/usr/bin/env python3
+"""Fake nvidia-smi for tests: two P100s, answers the queries the kit makes."""
+import sys
+a = " ".join(sys.argv[1:])
+if "--query-compute-apps" in a:
+    sys.exit(0)
+if "topo" in a:
+    print("\tGPU0\tGPU1\nGPU0\t X \tPHB\nGPU1\tPHB\t X "); sys.exit(0)
+if "--query-gpu=" not in a:
+    print("| NVIDIA-SMI 580.00   Driver Version: 580.00   CUDA Version: 13.0 |"); sys.exit(0)
+fields = a.split("--query-gpu=")[1].split()[0].split(",")
+vals = {"index": None, "name": "Tesla P100-PCIE-16GB", "uuid": "GPU-fake-{i}", "pci.bus_id": "00000000:0{i}:00.0",
+        "driver_version": "580.00", "vbios_version": "86.00", "memory.total": "16384", "power.limit": "250.00",
+        "power.max_limit": "250.00", "pcie.link.gen.current": "3", "pcie.link.gen.max": "3",
+        "pcie.link.width.current": "16", "pcie.link.width.max": "16", "clocks.max.sm": "1328",
+        "clocks.max.mem": "715", "temperature.gpu": "41", "clocks.sm": "1328", "clocks.mem": "715",
+        "power.draw": "120.5", "utilization.gpu": "95", "utilization.memory": "60", "memory.used": "9000",
+        "fan.speed": "[N/A]", "pstate": "P0", "clocks_event_reasons.active": "0x0000000000000000"}
+for i in range(2):
+    print(", ".join(str(i) if f == "index" else vals.get(f, "[N/A]").format(i=i) for f in fields))

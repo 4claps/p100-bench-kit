@@ -1,0 +1,2 @@
+{"name": "fake", "label": "Fake engine (tests)", "repo": "none", "commit": "0000000", "cuda_archs": "60",
+ "multi_gpu_split": "tensor", "env": {}, "mtp_args": ["--spec-type", "draft-mtp", "--spec-draft-n-max", "3"]}

@@ -1,0 +1,45 @@
+The Second Life of Datacenter Accelerators
+
+Introduction
+
+Every few years the largest computing companies replace their accelerators. The cards they retire are rarely broken. They are simply slower per watt than the new generation, and in a datacenter, where electricity and floor space are the dominant costs, a card that does half the work for the same power is a liability. So the old cards leave. They are sold in bulk to recyclers and brokers, who sell them again in smaller lots, and a few months later they appear on auction sites at a fraction of their original price. This article looks at what happens next: who buys these cards, what they do with them, and what the experience teaches about how computing hardware ages.
+
+Section 1: Why the cards become cheap
+
+A datacenter accelerator is priced for a customer who will run it at full load for three to five years. Its value to that customer is the work it can do in that window, minus the power it burns. When a newer card does the same work in a third of the time, the older card's value to the original owner collapses, even though nothing about the card itself has changed. Its memory still holds the same amount of data, its arithmetic units still compute the same results, and its connectors still fit the same slots.
+
+The secondary buyer sees a different equation. A hobbyist running a home server does not pay industrial electricity rates around the clock, and does not need the card to be the fastest on the market. They need it to be fast enough, and above all they need a lot of memory. For running large language models at home, memory capacity is the first constraint: a model that does not fit in memory runs slowly or not at all. An older card with sixteen gigabytes of fast memory can be cheaper than a new consumer card with half as much.
+
+Section 2: The memory question
+
+Large language models are, at the level of the hardware, enormous tables of numbers. Generating each word requires reading a large part of that table from memory. This makes text generation unusually sensitive to memory bandwidth, the rate at which a card can move data from its memory to its compute units. Older datacenter cards often used stacked high-bandwidth memory, an expensive technology that consumer cards of the same era did not have. As a result, a card that is weak at raw arithmetic by modern standards can still be respectable at generating text, because the bottleneck is memory traffic rather than calculation.
+
+Prompt processing behaves differently. When a model reads a long prompt, it can process many tokens at once, which turns the problem into one of arithmetic throughput. Here the age of the card shows. Newer cards have specialized units for the matrix multiplications that dominate this phase, and older cards do not. A home user therefore sees an uneven picture: generation that feels surprisingly quick, and reading of long documents that feels slow.
+
+Section 3: Software keeps moving
+
+The harder problem for owners of older cards is software. Vendors support a hardware generation in their newest toolkits for a limited time. Each new release of a compiler or library is tuned first for current products, and older architectures receive fewer optimizations, then only bug fixes, and eventually no support at all. A card that worked perfectly with last year's software may require an older toolkit this year, and that older toolkit may not work with the newest operating systems or applications.
+
+Open-source projects fill part of this gap. Volunteers who own older cards write and test code paths for them, report regressions when a change makes them slower, and maintain forks that keep features working after the main project moves on. This work is uneven. Some optimizations help one card and hurt another, and a change that looks correct in theory can turn out to be slower on real hardware. The only reliable way to know is to measure on the actual cards, under controlled conditions, and to compare against a known baseline.
+
+Section 4: Power, heat and noise
+
+Datacenter cards are designed for server chassis with powerful, loud fans that push air through every slot. Many of them have no fans of their own. In a desktop case or a home rack they overheat quickly unless the owner adds ducts, blower fans or aggressive case cooling. Heat matters for performance as well as for safety: when a card gets too hot, it lowers its clock speed to protect itself, and every result measured during that period understates what the card can do.
+
+Idle power is a second surprise. Cards built for continuous load are not always good at doing nothing. Some draw tens of watts each while idle, which adds up across several cards running all day. Owners experiment with power limits, clock settings and driver options to reduce this, with mixed results, and the findings are scattered across forum posts and personal notes rather than collected in one place.
+
+Section 5: Multi-card setups
+
+Because each older card has limited memory, owners often combine several in one machine to run larger models. Splitting a model across cards introduces new costs. Data must move between the cards, either through the main system or through direct peer-to-peer links, and the speed of those transfers depends on the motherboard, the number of lanes each slot provides, and whether the platform allows direct communication between devices. Two systems with identical cards can perform very differently because of the board they sit on.
+
+There are also different ways to split the work. One approach places whole layers of the model on each card, so the cards take turns. Another splits each layer across all cards, so they work at the same time but must exchange results constantly. Which approach is faster depends on the model, the number of cards and the interconnect, and again the answer has to be measured rather than assumed.
+
+Section 6: Measuring honestly
+
+Benchmarks of hobby hardware are easy to get wrong. A single run can be distorted by a cold cache, a card that has not yet reached its working clock, a background process, or a card that is throttling from heat. Results from different people are often impossible to compare because they used different model files, different software versions or different settings, and did not record them.
+
+Good measurement follows a few simple rules. Use the exact same model file and software version for every comparison. Discard the first run. Let the cards cool to the same temperature before each run, and record temperature and clock speed throughout. Repeat each test several times and report the median along with the spread. Interleave the configurations being compared, rather than running all of one and then all of the other, so that slow drift in conditions does not favor either side. Finally, say clearly what was measured and what was inferred.
+
+Conclusion
+
+Retired datacenter accelerators give hobbyists access to memory capacities and bandwidths that would otherwise be out of reach, at the cost of more heat, more noise, more power and more work to keep the software running. Their value depends less on their original specifications than on the patient, careful work of the people who measure them, share their results and keep the code paths alive. A shared, repeatable benchmark turns those scattered individual efforts into a body of evidence that everyone can use.
