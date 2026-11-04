@@ -181,3 +181,12 @@ def test_build_tables_skips_custom_and_invalid(tmp_path):
     assert "2 runs." in md
     assert md.index("| 38.0 |") < md.index("| 26.0 |")  # best first
     assert "custom model" in md and "marked invalid" in md and "junk.json" in md
+
+
+def test_split_args():
+    from benchkit.engines import split_args
+    e = {"multi_gpu_split": "tensor"}
+    assert split_args(e, [0]) == ["-sm", "none"]
+    assert split_args(e, [0, 1]) == ["-sm", "tensor", "-ts", "1/1"]
+    assert split_args(e, [0, 1, 2, 3], "layer") == ["-sm", "layer", "-ts", "1/1/1/1"]
+    assert split_args(e, [0, 1], "bogus") == ["-sm", "tensor", "-ts", "1/1"]

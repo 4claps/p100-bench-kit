@@ -51,7 +51,7 @@ def test_speed_and_server_run(env):
         bad = c.post("/api/runs", json={"model": mid, "engine": "fake", "gpus": [5], "modules": {"speed": {}}})
         assert bad.status_code == 400
 
-        spec = {"model": mid, "engine": "fake", "gpus": [0, 1], "label": "e2e",
+        spec = {"model": mid, "engine": "fake", "gpus": [0, 1], "label": "e2e", "split": "layer",
                 "modules": {"speed": {"reps": 2, "kv": ["q4_0", "f16"], "depths": [0, 4096]},
                             "server": {"reps": 2, "mtp": ["off", "on"]}}}
         r = c.post("/api/runs", json=spec).json()
@@ -69,7 +69,8 @@ def test_speed_and_server_run(env):
         assert "code.draft_accept" in sv["mtp=on"] and "code.draft_accept" not in sv["mtp=off"]
         assert d["run"]["snapshot"]["gpus"][0]["name"].startswith("Tesla")
         assert len(c.get(f"/api/runs/{r['id']}/telemetry").json()) >= 1
-        assert any("llama-bench" in l["line"] for l in c.get(f"/api/runs/{r['id']}/logs").json())
+        logs = c.get(f"/api/runs/{r['id']}/logs?tail=5000").json()
+        assert any("llama-bench" in l["line"] and "-sm layer" in l["line"] for l in logs)
 
         b = c.get(f"/api/runs/{r['id']}/export.json").json()
         assert b["bundle_schema"] == 1 and "GPU-fake" not in str(b)

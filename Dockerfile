@@ -12,6 +12,7 @@ ARG UV_VERSION=0.12.23
 FROM ghcr.io/astral-sh/uv:${UV_VERSION} AS uv
 
 # ---------------- engines ----------------
+# NCCL 2.27 ships in the CUDA 12.9 base images (held packages; do not apt-install it)
 FROM nvidia/cuda:${CUDA_VERSION}-devel-ubuntu22.04 AS engines
 ARG CUDA_ARCHS="60;61;70"
 ARG JOBS=""
@@ -19,7 +20,7 @@ ARG UPSTREAM_COMMIT=79e2e74eb11022c1ba2e438df7f0ca2d4c10f8b6
 ARG KMIC_COMMIT=ae35056eba07a52dc85c91b035170013d5e46220
 ENV CUDA_ARCHS=${CUDA_ARCHS} JOBS=${JOBS}
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      git cmake ninja-build ca-certificates libnccl2 libnccl-dev \
+      git cmake ninja-build ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 COPY docker/build-engine.sh /usr/local/bin/build-engine.sh
 RUN build-engine.sh upstream https://github.com/ggml-org/llama.cpp "$UPSTREAM_COMMIT" \
@@ -56,7 +57,7 @@ FROM nvidia/cuda:${CUDA_VERSION}-runtime-ubuntu22.04
 # python3 is what the agent tasks call; there is deliberately no `python`
 # on PATH (err_python_env tests exactly that). dmidecode reads RAM type/speed.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      libnccl2 libgomp1 python3 dmidecode pciutils ca-certificates \
+      libgomp1 python3 dmidecode pciutils ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
     && useradd -m -u 1000 bench
 COPY --from=python /opt/python /opt/python

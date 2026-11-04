@@ -134,6 +134,8 @@ async def list_runs(request: Request):
     st = S(request)
     out = []
     for r in st.db.list_runs():
+        if r["status"] == "created":
+            continue  # reviewed but never started
         spec = r["spec"]
         out.append({"id": r["id"], "status": r["status"], "created_at": r["created_at"],
                     "finished_at": r["finished_at"], "label": spec.get("label", ""), "model": spec.get("model"),

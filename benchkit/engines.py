@@ -30,11 +30,15 @@ def discover(engines_dir: Path) -> list[dict]:
     return out
 
 
-def split_args(engine: dict, gpus: list[int]) -> list[str]:
-    """Split mode and an even tensor split for the selected cards."""
+SPLIT_MODES = ("layer", "tensor")
+
+
+def split_args(engine: dict, gpus: list[int], override: str | None = None) -> list[str]:
+    """Split mode (the run's choice, else the engine default) and an even split."""
     if len(gpus) <= 1:
         return ["-sm", "none"]
-    return ["-sm", engine.get("multi_gpu_split", "layer"), "-ts", "/".join("1" for _ in gpus)]
+    mode = override if override in SPLIT_MODES else engine.get("multi_gpu_split", "layer")
+    return ["-sm", mode, "-ts", "/".join("1" for _ in gpus)]
 
 
 def env_for(engine: dict, gpus: list[int]) -> dict:

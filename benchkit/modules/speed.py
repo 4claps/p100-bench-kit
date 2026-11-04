@@ -67,7 +67,7 @@ class SpeedModule(Module):
                 argv = [f"{e['bin_dir']}/llama-bench", "-m", str(ctx.model_path), "-ngl", "99",
                         "-fa", "1", "-ctk", kv, "-ctv", kv, "-p", str(p["pp"]), "-n", str(p["tg"]),
                         "-d", ",".join(str(d) for d in p["depths"]), "-r", str(p["samples"]),
-                        "-o", "jsonl", *split_args(e, ctx.gpus)]
+                        "-o", "jsonl", *split_args(e, ctx.gpus, ctx.spec.get("split"))]
                 ctx.log("runner", "llama-bench: " + " ".join(argv))
                 proc = Proc(argv, env=env_for(e, ctx.gpus), on_line=lambda l: ctx.log("bench", l))
                 rc = proc.wait(timeout=3600, abort=ctx.abort)

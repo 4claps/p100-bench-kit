@@ -20,7 +20,7 @@ class LlamaServer:
         self.argv = [f"{e['bin_dir']}/llama-server", "-m", str(ctx.model_path),
                      "--host", "127.0.0.1", "--port", str(self.port),
                      "-ngl", "99", "-fa", "on", "-c", str(ctx_size), "-np", "1", "--jinja",
-                     *split_args(e, ctx.gpus), *extra_args]
+                     *split_args(e, ctx.gpus, ctx.spec.get("split")), *extra_args]
         if mtp:
             if not e.get("mtp_args"):
                 raise RuntimeError(f"engine {e['name']} has no MTP support configured")

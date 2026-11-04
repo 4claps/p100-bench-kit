@@ -45,7 +45,7 @@ class OffloadModule(Module):
             ctx.cool_down()
             argv = [f"{e['bin_dir']}/llama-bench", "-m", str(ctx.model_path), "-ngl", "99", "-fa", "1",
                     "-ot", "exps=CPU", "-t", str(threads), "-p", str(p["pp"]), "-n", str(p["tg"]),
-                    "-r", str(p["samples"]), "-o", "jsonl", *split_args(e, ctx.gpus)]
+                    "-r", str(p["samples"]), "-o", "jsonl", *split_args(e, ctx.gpus, ctx.spec.get("split"))]
             ctx.log("runner", "llama-bench: " + " ".join(argv))
             proc = Proc(argv, env=env_for(e, ctx.gpus), on_line=lambda l: ctx.log("bench", l))
             rc = proc.wait(timeout=3600, abort=ctx.abort)
