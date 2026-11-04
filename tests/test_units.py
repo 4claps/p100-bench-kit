@@ -161,3 +161,23 @@ def test_db_results_and_markdown(tmp_path):
     with pytest.raises(ValueError):
         db.update_run("r1", bogus=1)
     assert db.mark_unfinished_interrupted() == []
+
+
+def test_build_tables_skips_custom_and_invalid(tmp_path):
+    import sys
+    sys.path.insert(0, str(ROOT / "tools"))
+    import build_tables
+
+    def b(rid, comparable=True, invalid=False, tg=26.0):
+        return {"bundle_schema": 1, "run": {"id": rid, "invalid": invalid, "invalid_reason": "x" if invalid else None},
+                "spec": {"model": "qwen38-27b-q6kxl", "engine": "kmic", "gpus": [0, 1], "comparable": comparable},
+                "snapshot": {"gpus": [{"name": "Tesla P100"}] * 2, "memory": {"total_gb": 16, "type": "DDR3"}},
+                "summary": {"speed": {"kv=q4_0": {"tg128@0": {"median": tg, "min": tg, "max": tg, "n": 3, "unit": "t/s"}}}}}
+    (tmp_path / "p100x2").mkdir()
+    for name, bb in {"a": b("a"), "b": b("b", tg=38.0), "c": b("c", comparable=False), "d": b("d", invalid=True)}.items():
+        (tmp_path / "p100x2" / f"{name}.json").write_text(json.dumps(bb))
+    (tmp_path / "junk.json").write_text("{}")
+    md = build_tables.build(tmp_path)
+    assert "2 runs." in md
+    assert md.index("| 38.0 |") < md.index("| 26.0 |")  # best first
+    assert "custom model" in md and "marked invalid" in md and "junk.json" in md

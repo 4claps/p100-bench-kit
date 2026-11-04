@@ -58,6 +58,10 @@ def hermes_config(base_url: str, model_label: str, ctx_size: int, max_tokens: in
         "agent": {"reasoning_effort": "medium", "tool_use_enforcement": "auto"},
         "terminal": {"backend": "local"},
         "approvals": {"single_query_mode": "approve"},
+        # The original harness never had the tirith binary, so it ran on pattern
+        # matching only. Disabling it is the same behaviour without the stdout
+        # warning (which breaks exact-match grading) or a download attempt.
+        "security": {"tirith_enabled": False},
     }
 
 
@@ -128,7 +132,8 @@ class AgentModule(Module):
                     argv = [ctx.cfg.hermes_python, "-m", "hermes_cli.main", "chat", "--query", query,
                             "--quiet", "--max-turns", "30", "--accept-hooks", "--model", model_label]
                     t0 = time.time()
-                    proc = Proc(argv, env=env, cwd=str(work), preexec_uid=ctx.cfg.agent_uid,
+                    # graded on stdout only, like ab_eval (stderr carries warnings)
+                    proc = Proc(argv, env=env, cwd=str(work), preexec_uid=ctx.cfg.agent_uid, split_stderr=True,
                                 on_line=lambda l, tk=task: ctx.log("agent", f"[{tk}] {l}"))
                     rc = proc.wait(timeout=p["task_timeout_s"], abort=ctx.abort)
                     wall = round(time.time() - t0, 1)

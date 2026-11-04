@@ -15,7 +15,10 @@ from typing import Callable
 
 class Proc:
     def __init__(self, argv: list[str], env: dict | None = None, cwd: str | None = None,
-                 on_line: Callable[[str], None] | None = None, preexec_uid: int | None = None):
+                 on_line: Callable[[str], None] | None = None, preexec_uid: int | None = None,
+                 split_stderr: bool = False):
+        """split_stderr: keep stderr out of .lines (it still goes to on_line,
+        prefixed "stderr: ") for callers that grade stdout, like the agent."""
         self.argv = argv
         kw: dict = {}
         if preexec_uid is not None and os.geteuid() == 0:
@@ -24,24 +27,29 @@ class Proc:
             kw["extra_groups"] = []
         self.p = subprocess.Popen(
             argv, env={**os.environ, **(env or {})}, cwd=cwd, stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace",
+            stderr=subprocess.PIPE if split_stderr else subprocess.STDOUT, text=True, encoding="utf-8", errors="replace",
             start_new_session=True, **kw)
         self.pid = self.p.pid
         self.lines: list[str] = []
         self._on_line = on_line
-        self._reader = threading.Thread(target=self._read, daemon=True)
+        self.err_lines: list[str] = []
+        self._reader = threading.Thread(target=self._read, args=(self.p.stdout, self.lines, ""), daemon=True)
         self._reader.start()
+        self._err_reader = None
+        if split_stderr:
+            self._err_reader = threading.Thread(target=self._read, args=(self.p.stderr, self.err_lines, "stderr: "),
+                                                daemon=True)
+            self._err_reader.start()
 
-    def _read(self):
-        assert self.p.stdout
-        for line in self.p.stdout:
+    def _read(self, stream, store: list[str], prefix: str):
+        for line in stream:
             line = line.rstrip("\n")
-            self.lines.append(line)
-            if len(self.lines) > 20000:
-                del self.lines[:10000]
+            store.append(line)
+            if len(store) > 20000:
+                del store[:10000]
             if self._on_line:
                 try:
-                    self._on_line(line)
+                    self._on_line(prefix + line)
                 except Exception:  # noqa: BLE001
                     pass
 
@@ -61,6 +69,8 @@ class Proc:
                 return None
             time.sleep(0.2)
         self._reader.join(timeout=5)
+        if self._err_reader:
+            self._err_reader.join(timeout=5)
         return self.p.returncode
 
     def kill(self, grace: float = 10) -> None:
