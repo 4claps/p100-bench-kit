@@ -1,0 +1,5 @@
+#!/usr/bin/env python3
+"""Stands in for the hermes venv python: answers the no-tool task, otherwise a plain reply."""
+import sys
+q = sys.argv[sys.argv.index("--query") + 1] if "--query" in sys.argv else ""
+print("RESULT=323" if "17 multiplied by 19" in q else "I looked at the files and finished the task.")

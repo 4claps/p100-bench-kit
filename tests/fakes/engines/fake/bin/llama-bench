@@ -1,0 +1,10 @@
+#!/usr/bin/env python3
+"""Fake llama-bench: prints one JSONL row per test like the real -o jsonl."""
+import json, sys
+a = sys.argv
+g = lambda f, d: a[a.index(f) + 1] if f in a else d
+p, n = int(g("-p", "512")), int(g("-n", "128"))
+depths = [int(x) for x in g("-d", "0").split(",")]
+for d in depths:
+    print(json.dumps({"n_prompt": p, "n_gen": 0, "n_depth": d, "avg_ts": 500.0 - d / 100, "stddev_ts": 1.0, "samples_ts": [500.0], "build_commit": "fake"}))
+    print(json.dumps({"n_prompt": 0, "n_gen": n, "n_depth": d, "avg_ts": 40.0 - d / 2000, "stddev_ts": 0.1, "samples_ts": [40.0], "build_commit": "fake"}))

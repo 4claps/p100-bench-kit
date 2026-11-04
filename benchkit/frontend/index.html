@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>P100 Bench Kit</title>
+<link rel="stylesheet" href="/static/vendor/uPlot.min.css">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <div class="brand">P100 Bench Kit <span id="active-run" class="pill hidden"></span></div>
+  <nav>
+    <a href="#/run">New run</a>
+    <a href="#/history">History</a>
+    <a href="#/models">Models</a>
+    <a href="#/system">System</a>
+  </nav>
+</header>
+
+<main id="view"></main>
+
+<div id="login" class="overlay hidden">
+  <form class="card login" id="login-form">
+    <h2>Log in</h2>
+    <p class="muted">Paste the token from the container log or <code>/data/token</code>.</p>
+    <input id="login-token" type="password" autocomplete="current-password" placeholder="token" required>
+    <button type="submit">Log in</button>
+    <p id="login-err" class="err"></p>
+  </form>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+
+<script src="/static/vendor/uPlot.iife.min.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>

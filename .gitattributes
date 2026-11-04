@@ -1,0 +1,4 @@
+# Scripts run inside Linux containers; keep LF even when cloned on Windows.
+* text=auto eol=lf
+*.png binary
+*.gguf binary

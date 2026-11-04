@@ -1,0 +1,96 @@
+# Standard models. Results are only comparable between machines when the
+# exact same file is used, so each entry pins file names, sizes and SHA256
+# (from Hugging Face LFS metadata). Anything else is a "custom" model and
+# its results are marked not comparable.
+#
+# vram_gb: rough minimum total VRAM to hold the weights fully on GPU.
+# kind: dense | moe (moe models can run the offload module).
+# mtp: the file carries MTP draft heads (server module can test MTP on/off).
+
+schema: 1
+models:
+  - id: qwen3vl-4b-q4kxl
+    label: Qwen3-VL-4B Instruct UD-Q4_K_XL (small, 1 card)
+    repo: unsloth/Qwen3-VL-4B-Instruct-GGUF
+    kind: dense
+    mtp: false
+    vram_gb: 4
+    files:
+      - name: Qwen3-VL-4B-Instruct-UD-Q4_K_XL.gguf
+        size: 2546342176
+        sha256: a5563711a524defc06d67438a497ce4ba9a0fb126f28456a9f207e2ad104eb75
+
+  - id: qwen38-27b-q4kxl
+    label: Qwen3.8-27B UD-Q4_K_XL
+    repo: unsloth/Qwen3.8-27B-GGUF
+    kind: dense
+    mtp: true
+    vram_gb: 20
+    files:
+      - name: Qwen3.8-27B-UD-Q4_K_XL.gguf
+        size: 17559178144
+        sha256: 3f227079003add2511437e5b1e94812e363385225bf6a9b47b0054a72bc8b01e
+
+  - id: qwen38-27b-q6kxl
+    label: Qwen3.8-27B UD-Q6_K_XL (Houston production)
+    repo: unsloth/Qwen3.8-27B-GGUF
+    kind: dense
+    mtp: true
+    vram_gb: 28
+    files:
+      - name: Qwen3.8-27B-UD-Q6_K_XL.gguf
+        size: 25299061664
+        sha256: 701d8fa9ed214ab21bfc130cd2a7df19ca89bbef7713e2dfb19f3c63696aa917
+
+  - id: qwen38-27b-q8
+    label: Qwen3.8-27B Q8_0
+    repo: unsloth/Qwen3.8-27B-GGUF
+    kind: dense
+    mtp: true
+    vram_gb: 32
+    files:
+      - name: Qwen3.8-27B-Q8_0.gguf
+        size: 29047086048
+        sha256: a680f44a06920e5d689774823782006aa3acc8db95750323373b24139b67e348
+
+  - id: qwen36-35b-a3b-q2kxl
+    label: Qwen3.6-35B-A3B UD-Q2_K_XL (MoE, offload test default)
+    repo: unsloth/Qwen3.6-35B-A3B-MTP-GGUF
+    kind: moe
+    mtp: true
+    vram_gb: 14
+    files:
+      - name: Qwen3.6-35B-A3B-UD-Q2_K_XL.gguf
+        size: 12574128416
+        sha256: ed7cda7e38985b4fcff76475865135039641d2bfbac3c169df15ca770f37fb0c
+
+  - id: qwen36-35b-a3b-q4kxl
+    label: Qwen3.6-35B-A3B UD-Q4_K_XL (MoE)
+    repo: unsloth/Qwen3.6-35B-A3B-MTP-GGUF
+    kind: moe
+    mtp: true
+    vram_gb: 25
+    files:
+      - name: Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf
+        size: 22853663008
+        sha256: 55983c5a75a1ab969824077b3bb3de4146e82a9234072b48ad4e8f92ad3fe9f1
+
+  - id: flash-next-q2kxl
+    label: Qwen3.8-Flash-Next UD-Q2_K_XL (MoE, ~80 GB, needs big RAM for offload)
+    repo: unsloth/Qwen3.8-Flash-Next-GGUF
+    kind: moe
+    mtp: false
+    vram_gb: 84
+    files:
+      - name: UD-Q2_K_XL/Qwen3.8-Flash-Next-UD-Q2_K_XL-00001-of-00004.gguf
+        size: 10946618
+        sha256: 297e174dc185f2bf3ab1856461059cb8a05aa741bc27edf42461cde87e5420af
+      - name: UD-Q2_K_XL/Qwen3.8-Flash-Next-UD-Q2_K_XL-00002-of-00004.gguf
+        size: 49732486272
+        sha256: a4782511810bb61bd6b3236607a0aad05b1bfa04b90356defd202bb17e7db16d
+      - name: UD-Q2_K_XL/Qwen3.8-Flash-Next-UD-Q2_K_XL-00003-of-00004.gguf
+        size: 1037181344
+        sha256: 4dffc4a1cea7ad484f2d5c711b747840e459b040b636cc8ddaa524d01e60662e
+      - name: UD-Q2_K_XL/Qwen3.8-Flash-Next-UD-Q2_K_XL-00004-of-00004.gguf
+        size: 28800138432
+        sha256: 5de8b5dbf89409acc39468decafd4a4a95b13c29d88a14b0356107897829ec36
