@@ -100,6 +100,18 @@ function metricSeries(metric, samples, gpus) {
 }
 const num = (v) => (typeof v === "number" ? v : null);
 
+// latest non-empty value of each series, shown in the chart header so no hover is needed
+function latestHtml(data, unit) {
+  const fmt = (v) => (Math.abs(v) >= 100 ? Math.round(v) : Math.round(v * 10) / 10).toLocaleString();
+  return data.ys.map((ys, i) => {
+    let v = null;
+    for (let j = ys.length - 1; j >= 0 && v === null; j--) v = ys[j];
+    if (v === null) return "";
+    const name = data.names.length > 1 ? `<span class="muted">${esc(data.names[i].replace("GPU ", ""))}</span> ` : "";
+    return `<span class="latest" style="--c:${PALETTE[i % PALETTE.length]}">${name}${fmt(v)}${unit ? " " + esc(unit) : ""}</span>`;
+  }).join("");
+}
+
 const clock = (u, vals) => vals.map((v) => new Date(v * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
 function makeChart(el, metric, data) {
   const w = Math.max(200, el.clientWidth || 320);
@@ -126,10 +138,12 @@ function renderCharts(container, metricIds, samples, gpus) {
   for (const id of metricIds) {
     const m = cat[id]; if (!m) continue;
     const box = document.createElement("div"); box.className = "card chart";
-    box.innerHTML = `<div class="title">${esc(m.label)} ${m.unit ? "(" + esc(m.unit) + ")" : ""}</div><div class="plot"></div>`;
+    box.innerHTML = `<div class="title">${esc(m.label)} ${m.unit ? "(" + esc(m.unit) + ")" : ""}</div><div class="latest-row"></div><div class="plot"></div>`;
     container.appendChild(box);
     const data = metricSeries(m, samples, gpus);
-    state.charts.push({ metric: m, gpus, plot: makeChart($(".plot", box), m, data) });
+    const latest = $(".latest-row", box);
+    latest.innerHTML = latestHtml(data, m.unit);
+    state.charts.push({ metric: m, gpus, latest, plot: makeChart($(".plot", box), m, data) });
   }
 }
 
@@ -137,6 +151,7 @@ function pushChartSample(samples) {
   for (const c of state.charts) {
     const d = metricSeries(c.metric, samples, c.gpus);
     c.plot.setData([d.x, ...d.ys]);
+    c.latest.innerHTML = latestHtml(d, c.metric.unit);
   }
 }
 
