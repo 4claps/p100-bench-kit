@@ -76,6 +76,9 @@ COPY README.md LICENSE /opt/benchkit/
 ENV BENCHKIT_DATA_DIR=/data BENCHKIT_MODELS_DIR=/models BENCHKIT_ENGINES_DIR=/opt/engines \
     BENCHKIT_HERMES_PYTHON=/opt/hermes-venv/bin/python BENCHKIT_HERMES_SOURCE=/opt/hermes-agent \
     BENCHKIT_MANIFEST=/opt/benchkit/models/manifest.yaml PYTHONUNBUFFERED=1
+# Both engines use NCCL for tensor split. Without this, NCCL picks a host-memory
+# transport on some boards and aborts with "unhandled system error" (seen on 4x P100, X79).
+ENV NCCL_P2P_LEVEL=SYS
 WORKDIR /opt/benchkit
 VOLUME ["/data"]
 EXPOSE 8090
