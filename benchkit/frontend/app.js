@@ -100,6 +100,18 @@ function metricSeries(metric, samples, gpus) {
 }
 const num = (v) => (typeof v === "number" ? v : null);
 
+// latest non-empty value of each series, shown in the chart header so no hover is needed
+function latestHtml(data, unit) {
+  const fmt = (v) => (Math.abs(v) >= 100 ? Math.round(v) : Math.round(v * 10) / 10).toLocaleString();
+  return data.ys.map((ys, i) => {
+    let v = null;
+    for (let j = ys.length - 1; j >= 0 && v === null; j--) v = ys[j];
+    if (v === null) return "";
+    const name = data.names.length > 1 ? `<span class="muted">${esc(data.names[i].replace("GPU ", ""))}</span> ` : "";
+    return `<span class="latest" style="--c:${PALETTE[i % PALETTE.length]}">${name}${fmt(v)}${unit ? " " + esc(unit) : ""}</span>`;
+  }).join("");
+}
+
 const clock = (u, vals) => vals.map((v) => new Date(v * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
 function makeChart(el, metric, data) {
   const w = Math.max(200, el.clientWidth || 320);
@@ -126,10 +138,12 @@ function renderCharts(container, metricIds, samples, gpus) {
   for (const id of metricIds) {
     const m = cat[id]; if (!m) continue;
     const box = document.createElement("div"); box.className = "card chart";
-    box.innerHTML = `<div class="title">${esc(m.label)} ${m.unit ? "(" + esc(m.unit) + ")" : ""}</div><div class="plot"></div>`;
+    box.innerHTML = `<div class="title">${esc(m.label)} ${m.unit ? "(" + esc(m.unit) + ")" : ""}</div><div class="latest-row"></div><div class="plot"></div>`;
     container.appendChild(box);
     const data = metricSeries(m, samples, gpus);
-    state.charts.push({ metric: m, gpus, plot: makeChart($(".plot", box), m, data) });
+    const latest = $(".latest-row", box);
+    latest.innerHTML = latestHtml(data, m.unit);
+    state.charts.push({ metric: m, gpus, latest, plot: makeChart($(".plot", box), m, data) });
   }
 }
 
@@ -137,6 +151,7 @@ function pushChartSample(samples) {
   for (const c of state.charts) {
     const d = metricSeries(c.metric, samples, c.gpus);
     c.plot.setData([d.x, ...d.ys]);
+    c.latest.innerHTML = latestHtml(d, c.metric.unit);
   }
 }
 
@@ -180,7 +195,7 @@ function readParam(mod, key, spec) {
 }
 
 async function viewRun(_, gen = state.gen) {
-  const sys = state.system;
+  const sys = state.system = await api("/system?refresh=1");  // fresh power caps
   const models = state.models = await api("/models");
   const presets = await api("/presets");
   fresh(gen);
@@ -213,21 +228,47 @@ async function viewRun(_, gen = state.gen) {
       <div class="small muted">${esc(m.description)}</div>
       <div class="params">${Object.entries(m.params).map(([k, s]) => paramInput(m.name, k, s, s.default)).join("")}</div>
     </div>`).join("")}</div>
+  ${powerCapCard(sys)}
   <div class="card">
     <h3>Guardrails</h3>
     <div class="small muted">Warnings always show. Tick to also abort the run when one fires (after ${esc(sys.guardrails.sustain_s)} s sustained).</div>
-    <div class="chips"><label><input type="checkbox" id="g-low"> abort on low clock (&lt; ${esc(sys.guardrails.low_clock_mhz)} MHz while busy)</label>
-      <label><input type="checkbox" id="g-thermal"> abort on temperature &gt; ${esc(sys.guardrails.thermal_warn_c)} °C</label></div>
+    <div class="chips"><label><input type="checkbox" id="g-low" checked> abort on low clock (&lt; ${esc(sys.guardrails.low_clock_mhz)} MHz while busy)</label>
+      <label><input type="checkbox" id="g-thermal" checked> abort on temperature &gt; ${esc(sys.guardrails.thermal_warn_c)} °C</label></div>
     <div class="row" style="margin-top:12px"><button id="r-review">Review run</button></div>
   </div>
   <div id="r-confirm"></div>`;
   $$(".module").forEach((el) => $(".mod-on", el).addEventListener("change", (e) => el.classList.toggle("off", !e.target.checked)));
   $("#r-review").onclick = reviewRun;
+  $("#pc-change").addEventListener("change", (e) => ($("#pc-choices").hidden = !e.target.checked));
   $("#r-preset-save").onclick = async () => {
     const name = $("#r-preset-name").value.trim(); if (!name) return toast("Name the preset first");
     await api("/presets/" + encodeURIComponent(name), { method: "PUT", json: { spec: collectSpec(true) } }); toast("Preset saved"); route();
   };
   $("#r-preset-load").onclick = () => { const p = presets.find((x) => x.name === $("#r-preset").value); if (p) applySpec(p.spec); };
+}
+
+// ---------------- power cap ----------------
+function powerCapText(snap, gpus) {
+  const caps = [...new Set((snap.gpus || []).filter((g) => g.power_limit && (!gpus || gpus.includes(g.index))).map((g) => g.power_limit))].sort((a, b) => a - b);
+  return caps.length ? caps.map((c) => +c.toFixed(0)).join("/") + " W" : "";
+}
+
+function powerCapCard(sys) {
+  const gpus = sys.snapshot.gpus || [];
+  const cur = powerCapText(sys.snapshot);
+  const one = gpus.length && new Set(gpus.map((g) => g.power_limit)).size === 1 ? Math.round(gpus[0].power_limit) : null;
+  const lo = Math.max(...gpus.map((g) => g.power_min_limit || 0)), hi = Math.min(...gpus.map((g) => g.power_max_limit || 1e9));
+  const choices = sys.power.choices.filter((w) => w >= lo && w <= hi);
+  if (one && !choices.includes(one)) choices.push(one), choices.sort((a, b) => a - b);
+  const range = gpus.length && gpus[0].power_max_limit ? ` The cards accept ${+lo.toFixed(0)}-${+hi.toFixed(0)} W${gpus[0].power_default_limit ? ", default " + +gpus[0].power_default_limit.toFixed(0) + " W" : ""}.` : "";
+  return `<div class="card">
+    <h3>Power cap</h3>
+    <div>Current cap: <b>${esc(cur || "unknown")}</b>${gpus.length > 1 ? " (all GPUs)" : ""}.<span class="small muted">${esc(range)}</span></div>
+    <label style="display:block;margin-top:8px"><input type="checkbox" id="pc-change" ${sys.power.can_set ? "" : "disabled"}> Change the power cap for this run?</label>
+    <div class="chips" id="pc-choices" hidden>${choices.map((w) => `<label><input type="radio" name="pc" value="${w}" ${w === one ? "checked" : ""}> ${w} W${w === one ? " (current)" : ""}</label>`).join("")}</div>
+    <div class="small muted">${sys.power.can_set ? "Set on the selected GPUs when the run starts and put back to the current cap when it ends."
+      : "To change it from here, start the container with <code>--cap-add SYS_ADMIN</code>."}</div>
+  </div>`;
 }
 
 function collectSpec(forPreset = false) {
@@ -239,7 +280,8 @@ function collectSpec(forPreset = false) {
   }
   const abort_on = [$("#g-low").checked && "low_clock", $("#g-thermal").checked && "thermal"].filter(Boolean);
   return { model: $("#r-model").value, engine: $("#r-engine").value, split: $("#r-split").value, label: forPreset ? "" : $("#r-label").value,
-    gpus: $$("#r-gpus input:checked").map((i) => +i.value), modules, abort_on };
+    gpus: $$("#r-gpus input:checked").map((i) => +i.value), modules, abort_on,
+    power_cap: $("#pc-change").checked && $("input[name=pc]:checked") ? +$("input[name=pc]:checked").value : null };
 }
 
 function applySpec(spec) {
@@ -263,6 +305,10 @@ function applySpec(spec) {
   }
   $("#g-low").checked = (spec.abort_on || []).includes("low_clock");
   $("#g-thermal").checked = (spec.abort_on || []).includes("thermal");
+  const pc = spec.power_cap && $(`input[name=pc][value="${spec.power_cap}"]`);
+  if (pc && !$("#pc-change").disabled) pc.checked = true;
+  $("#pc-change").checked = !!(pc && !$("#pc-change").disabled);
+  $("#pc-choices").hidden = !$("#pc-change").checked;
 }
 
 async function reviewRun() {
@@ -275,6 +321,7 @@ async function reviewRun() {
     <h2>Confirm</h2>
     <dl class="kv"><dt>Model</dt><dd>${esc(r.spec.model)}</dd><dt>Engine</dt><dd>${esc(r.spec.engine)}</dd>
       <dt>GPUs</dt><dd>${esc(r.spec.gpus.join(", "))}${r.spec.gpus.length > 1 ? ", " + esc(r.spec.split) + " split" : ""}</dd><dt>Modules</dt><dd>${esc(Object.keys(r.spec.modules).join(", "))}</dd>
+      <dt>Power cap</dt><dd>${r.spec.power_cap ? esc(r.spec.power_cap + " W for this run, then back to " + powerCapText(state.system.snapshot, r.spec.gpus)) : esc(powerCapText(state.system.snapshot, r.spec.gpus) + " (unchanged)")}</dd>
       <dt>Estimated time</dt><dd>about ${esc(dur(r.estimate_s))} (rough)</dd></dl>
     ${pf.block.length ? `<h3 class="err">Blocked</h3><ul>${pf.block.map((b) => `<li class="err">${esc(b)}</li>`).join("")}</ul>` : ""}
     ${pf.warn.length ? `<h3 class="warn">Warnings</h3><ul>${pf.warn.map((b) => `<li class="warn">${esc(b)}</li>`).join("")}</ul>` : ""}
@@ -371,6 +418,20 @@ function summarizeLocal(results) {
 
 const MOD_ORDER = ["speed", "server", "offload", "agent"];
 const byModule = (a, b) => MOD_ORDER.indexOf(a[0]) - MOD_ORDER.indexOf(b[0]);
+// prompt / generation tokens/s per module and variant, average and max
+function throughputTable(tp) {
+  const rows = [];
+  for (const [mod, vars] of Object.entries(tp || {}).sort(byModule)) for (const [v, k] of Object.entries(vars)) {
+    const pr = k.prompt || {}, ge = k.gen || {};
+    rows.push(`<tr><td>${esc(mod)}</td><td>${esc(v)}</td>
+      <td class="num">${fmt(pr.avg, 1)}</td><td class="num muted">${fmt(pr.max, 1)}</td>
+      <td class="num strong">${fmt(ge.avg, 1)}</td><td class="num">${fmt(ge.max, 1)}</td><td class="num muted">${Math.max(pr.n || 0, ge.n || 0)}</td></tr>`);
+  }
+  return rows.length ? `<table><tr><th>module</th><th>variant</th><th class="num">prompt avg</th><th class="num">prompt max</th>
+    <th class="num">generation avg</th><th class="num">generation max</th><th class="num">n</th></tr>${rows.join("")}</table>
+    <p class="small muted">Tokens per second. Averages weight each request by its token count where the count is known.</p>` : "";
+}
+
 function resultsTable(summary) {
   const rows = [];
   for (const [mod, vars] of Object.entries(summary).sort(byModule)) for (const [v, mets] of Object.entries(vars)) for (const [m, s] of Object.entries(mets))
@@ -419,7 +480,8 @@ async function viewDetail(id, gen = state.gen) {
     <div class="card"><h2>Run</h2><dl class="kv">
       <dt>Model</dt><dd>${esc(spec.model)}${spec.comparable === false ? " (custom, not comparable)" : ""}</dd><dt>Engine</dt><dd>${esc(spec.engine)}</dd>
       <dt>GPUs</dt><dd>${esc((spec.gpus || []).join(", "))}${(spec.gpus || []).length > 1 && spec.split ? ", " + esc(spec.split) + " split" : ""}</dd><dt>Started</dt><dd>${esc(when(r.started_at))}</dd>
-      <dt>Finished</dt><dd>${esc(when(r.finished_at))}</dd><dt>Hardware</dt><dd>${esc(hwLine(snap))}</dd></dl>
+      <dt>Finished</dt><dd>${esc(when(r.finished_at))}</dd><dt>Hardware</dt><dd>${esc(hwLine(snap))}</dd>
+      <dt>Power cap</dt><dd>${esc(powerCapText(snap, spec.gpus) || "unknown")}${spec.power_cap ? " (set for this run)" : ""}</dd></dl>
       <div class="row" style="margin-top:10px">
         <a href="/api/runs/${esc(id)}/export.json" download><button class="secondary">Download result file</button></a>
         <a href="/api/runs/${esc(id)}/export.md" target="_blank" rel="noopener"><button class="secondary">Markdown</button></a>
@@ -431,6 +493,7 @@ async function viewDetail(id, gen = state.gen) {
         <input type="text" id="d-reason" placeholder="reason" value="${esc(r.invalid_reason || "")}" style="flex:1"></div>
       <div class="row" style="margin-top:8px"><button id="d-save">Save</button></div></div>`}
   </div>
+  ${throughputTable(d.throughput) ? `<div class="card"><h2>Tokens per second</h2><div class="table-wrap">${throughputTable(d.throughput)}</div></div>` : ""}
   <div class="card"><h2>Results</h2><div class="table-wrap">${resultsTable(d.summary)}</div></div>
   ${d.agent_tasks.length ? `<div class="card"><h2>Agent tasks</h2><div class="table-wrap"><table><tr><th>task</th><th class="num">run</th><th class="num">wall</th><th class="num">exit</th><th>pass</th></tr>
     ${d.agent_tasks.map((t) => `<tr><td>${esc(t.task)}</td><td class="num">${t.rep + 1}</td><td class="num">${fmt(t.wall_s, 0)} s</td><td class="num">${esc(t.exit_code)}</td><td class="${t.success ? "ok" : "err"}">${t.success ? "pass" : "fail"}</td></tr>`).join("")}</table></div></div>` : ""}

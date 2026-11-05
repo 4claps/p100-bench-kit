@@ -12,11 +12,12 @@ import platform
 import re
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
 GPU_FIELDS = [
     "index", "name", "uuid", "pci.bus_id", "driver_version", "vbios_version",
-    "memory.total", "power.limit", "power.max_limit",
+    "memory.total", "power.limit", "power.min_limit", "power.max_limit", "power.default_limit",
     "pcie.link.gen.current", "pcie.link.gen.max",
     "pcie.link.width.current", "pcie.link.width.max",
     "clocks.max.sm", "clocks.max.mem",
@@ -33,6 +34,45 @@ def run_cmd(argv: list[str], timeout: float = 20) -> tuple[bool, str]:
     if p.returncode != 0:
         return False, (p.stderr or p.stdout).strip()[:500]
     return True, p.stdout
+
+
+def _fix_checksum(buf: bytearray, at: int, start: int, end: int) -> None:
+    buf[at] = 0
+    buf[at] = -sum(buf[start:end]) & 0xFF
+
+
+def dmi_dump(entry: bytes, table: bytes) -> bytes | None:
+    """Build a `dmidecode --from-dump` file from the raw sysfs SMBIOS tables.
+
+    Docker masks /sys/firmware, so the container gets the host's
+    /sys/firmware/dmi/tables mounted elsewhere instead. A dump file is the
+    entry point at offset 0 and the table at 32, with the entry point's
+    table address pointing at 32, as `dmidecode --dump-bin` writes it.
+    """
+    ep = bytearray(entry)
+    if ep[:5] == b"_SM3_" and len(ep) >= 24:
+        ep[0x10:0x18] = (32).to_bytes(8, "little")
+        _fix_checksum(ep, 0x05, 0, ep[0x06])
+    elif ep[:4] == b"_SM_" and len(ep) >= 31:
+        ep[0x18:0x1C] = (32).to_bytes(4, "little")
+        _fix_checksum(ep, 0x15, 0x10, 0x1F)
+        _fix_checksum(ep, 0x04, 0, ep[0x05])
+    else:
+        return None
+    return bytes(ep[:32]).ljust(32, b"\0") + table
+
+
+def dmidecode_from_tables(src: str) -> tuple[bool, str]:
+    try:
+        dump = dmi_dump(Path(src, "smbios_entry_point").read_bytes(), Path(src, "DMI").read_bytes())
+    except OSError as e:
+        return False, f"dmidecode: no /dev/mem and no tables at {src} ({e.strerror})"
+    if dump is None:
+        return False, "dmidecode: unknown SMBIOS entry point"
+    with tempfile.NamedTemporaryFile(suffix=".dmi") as f:
+        f.write(dump)
+        f.flush()
+        return run_cmd(["dmidecode", "--from-dump", f.name, "-t", "17"])
 
 
 def _num(v: str):
@@ -112,6 +152,19 @@ def _read(path: str) -> str | None:
         return None
 
 
+POWER_CAP_CHOICES = [125, 150, 175, 200, 225, 250]
+
+
+def can_set_power() -> bool:
+    """nvidia-smi -pl needs root and, in a container, CAP_SYS_ADMIN (--cap-add SYS_ADMIN)."""
+    m = re.search(r"^CapEff:\s*([0-9a-f]+)", _read("/proc/self/status") or "", re.M)
+    return os.geteuid() == 0 and bool(m) and bool(int(m.group(1), 16) >> 21 & 1)
+
+
+def set_power_limit(gpu: int, watts: float) -> tuple[bool, str]:
+    return run_cmd(["nvidia-smi", "-i", str(gpu), "-pl", f"{watts:g}"])
+
+
 def snapshot(engines: list[dict] | None = None) -> dict:
     snap: dict = {"errors": {}}
 
@@ -132,6 +185,8 @@ def snapshot(engines: list[dict] | None = None) -> dict:
     m = re.search(r"MemTotal:\s+(\d+)", meminfo)
     snap["memory"] = {"total_gb": round(int(m.group(1)) / 1024 / 1024, 1) if m else None}
     ok, out = run_cmd(["dmidecode", "-t", "17"])
+    if not ok:
+        ok, out = dmidecode_from_tables(os.environ.get("BENCHKIT_DMI_DIR", "/host-dmi"))
     if ok:
         dimms = parse_dmidecode_memory(out)
         snap["memory"]["dimms"] = dimms

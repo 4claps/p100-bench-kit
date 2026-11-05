@@ -23,7 +23,8 @@ temperature, SM and memory clocks, power, utilization, VRAM, PCIe link, CPU
 load, clock, temperature and package power, RAM and fan speeds once a second.
 Two guardrails watch every sample: a busy GPU stuck below 1000 MHz (stuck
 clocks have invalidated real results before) and a GPU above 80 °C. Each
-warns once when the condition has held for 10 s, and can optionally abort the run.
+warns once when the condition has held for 10 s and, by default, aborts the run
+(untick it on New Run to only warn).
 
 ## Quick start
 
@@ -32,7 +33,9 @@ docker build -t p100-bench-kit .          # 30–90 min: compiles two llama.cpp 
 docker run -d --name bench --gpus all -p 8090:8090 \
   -v /path/to/your/models:/models \
   -v bench-data:/data \
+  -v /sys/firmware/dmi/tables:/host-dmi:ro \
   p100-bench-kit
+# optional: add --cap-add SYS_ADMIN to let runs change the GPU power cap (see Security)
 docker logs bench                          # shows where the login token is
 docker exec bench cat /data/token          # the token itself
 ```
@@ -53,9 +56,10 @@ blocks the run if another process holds them.
 | Engine | Source | Multi-GPU | Notes |
 |---|---|---|---|
 | `upstream` | ggml-org/llama.cpp, pinned commit | layer split | the fair baseline across hardware |
-| `kmic` | Kmic-68/llama.cpp, pinned commit | tensor split | Pascal-tuned fork; uses its QUICKSTART env (P2P, graphs on pre-Volta) |
+| `kmic` | Kmic-68/llama.cpp, pinned commit | tensor split | Pascal-tuned fork; uses its QUICKSTART env (P2P, graphs on pre-Volta). Built for P100 (sm_60) only, as the fork's own build guide does |
 
 Commits are pinned in the `Dockerfile` (`UPSTREAM_COMMIT`, `KMIC_COMMIT`).
+On a P40 or V100, use the `upstream` engine.
 Builds use CUDA 12.9, the last toolkit line that still targets sm_60/sm_70.
 The CPU backend is built for every x86 variant and picked at runtime, so old
 Xeons without AVX2 still work.
@@ -99,7 +103,16 @@ All optional, as environment variables:
 - Agent tasks run shell commands chosen by the model. They run as an
   unprivileged user inside the container, in a scratch folder under `/data/agent`.
 - RAM type and speed come from `dmidecode`, which reads the firmware tables.
-  If your container setup blocks that, the RAM fields show as unknown.
+  Docker hides those from containers, so the run command mounts the host's
+  copy read-only at `/host-dmi`. Leave that line out and the RAM fields show
+  as unknown; everything else still works.
+- New Run shows each GPU's current power cap and records it with the run.
+  Changing it for a run (125-250 W, within what the cards accept) needs
+  `--cap-add SYS_ADMIN` on `docker run`, because `nvidia-smi -pl` is refused
+  without it. The kit sets the cap on the selected GPUs when the run starts and
+  puts the old one back when it ends, even if the run fails or is aborted. If
+  the container is killed mid-run, the cap stays until you reset it
+  (`nvidia-smi -pl <watts>`) or reboot. Without the flag the option is greyed out.
 
 ## Development
 

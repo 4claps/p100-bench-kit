@@ -2,9 +2,11 @@
 #
 #   docker build -t p100-bench-kit .
 #   docker run -d --name bench --gpus all -p 8090:8090 \
+#     -v /sys/firmware/dmi/tables:/host-dmi:ro \
 #     -v /path/to/models:/models -v bench-data:/data p100-bench-kit
 #
-# Build args: CUDA_ARCHS (default 60;61;70 = P100, P40/P4, V100), JOBS.
+# Build args: CUDA_ARCHS (default 60;61;70 = P100, P40/P4, V100) for the upstream
+# engine, KMIC_CUDA_ARCHS (default 60, P100 only), JOBS.
 
 ARG CUDA_VERSION=12.9.1
 ARG UV_VERSION=0.12.23
@@ -27,7 +29,10 @@ RUN build-engine.sh upstream https://github.com/ggml-org/llama.cpp "$UPSTREAM_CO
       "llama.cpp upstream (baseline)" layer '{}' \
       '["--spec-type", "draft-mtp", "--spec-draft-n-max", "3", "--spec-draft-p-min", "0.0"]' \
       "Pinned upstream build; the fair baseline for cross-hardware comparisons."
-RUN build-engine.sh kmic https://github.com/Kmic-68/llama.cpp "$KMIC_COMMIT" \
+# Kmic is built for sm_60 only, as its p100-docs/BUILD.md does: its P100 mmvq
+# tuning is gated on __CUDA_ARCH_LIST__ == 600, and other arch lists fail to compile.
+ARG KMIC_CUDA_ARCHS=60
+RUN CUDA_ARCHS="$KMIC_CUDA_ARCHS" build-engine.sh kmic https://github.com/Kmic-68/llama.cpp "$KMIC_COMMIT" \
       "Kmic-68 llama.cpp (P100 tuned)" tensor \
       '{"GGML_CUDA_P2P": "1", "GGML_CUDA_GRAPHS_PRE_VOLTA": "3", "LLAMA_SPEC_SAMPLE_TEMP": "1.0", "LLAMA_SPEC_DRAFT_TOPK": "20"}' \
       '["--spec-type", "draft-mtp", "--spec-draft-n-max", "3", "--spec-draft-p-min", "0.0"]' \
@@ -71,6 +76,9 @@ COPY README.md LICENSE /opt/benchkit/
 ENV BENCHKIT_DATA_DIR=/data BENCHKIT_MODELS_DIR=/models BENCHKIT_ENGINES_DIR=/opt/engines \
     BENCHKIT_HERMES_PYTHON=/opt/hermes-venv/bin/python BENCHKIT_HERMES_SOURCE=/opt/hermes-agent \
     BENCHKIT_MANIFEST=/opt/benchkit/models/manifest.yaml PYTHONUNBUFFERED=1
+# Both engines use NCCL for tensor split. Without this, NCCL picks a host-memory
+# transport on some boards and aborts with "unhandled system error" (seen on 4x P100, X79).
+ENV NCCL_P2P_LEVEL=SYS
 WORKDIR /opt/benchkit
 VOLUME ["/data"]
 EXPOSE 8090

@@ -48,6 +48,7 @@ class RunContext:
         self.snapshot = snapshot
         self.abort = threading.Event()
         self.abort_reason = ""
+        self.power_restore: dict[int, float] = {}
         self.server_live: dict = {}
         self._log_buf: list[tuple[str, str]] = []
         self._log_lock = threading.Lock()
@@ -184,10 +185,27 @@ class Runner:
         split = str(spec.get("split") or "")
         if split and split not in engines_mod.SPLIT_MODES:
             raise ValueError(f"split must be one of {engines_mod.SPLIT_MODES} (or empty for the engine default)")
-        abort_on = [a for a in spec.get("abort_on") or [] if a in ("low_clock", "thermal")]
+        # both guardrails abort by default; an explicit [] turns them off
+        abort_on = [a for a in spec.get("abort_on", ["low_clock", "thermal"]) or [] if a in ("low_clock", "thermal")]
+        power_cap = spec.get("power_cap")
+        if power_cap not in (None, ""):
+            try:
+                power_cap = int(power_cap)
+            except (TypeError, ValueError):
+                raise ValueError("power_cap must be a number of watts")
+            if not hw.can_set_power():
+                raise ValueError("this container can't change the power cap; start it with --cap-add SYS_ADMIN")
+            by_index = {g.get("index"): g for g in self.snapshot().get("gpus") or []}
+            for gi in gpus:
+                g = by_index.get(gi) or {}
+                lo, hi = g.get("power_min_limit"), g.get("power_max_limit")
+                if lo is not None and hi is not None and not lo <= power_cap <= hi:
+                    raise ValueError(f"GPU {gi} accepts a power cap of {lo:g}-{hi:g} W")
+        else:
+            power_cap = None
         return {"model": model_id, "engine": engine["name"], "gpus": gpus, "modules": norm,
                 "split": split or engine.get("multi_gpu_split", "layer"), "abort_on": abort_on,
-                "label": str(spec.get("label") or "")[:120], "comparable": comparable}
+                "label": str(spec.get("label") or "")[:120], "comparable": comparable, "power_cap": power_cap}
 
     def estimate(self, spec: dict) -> int:
         path, _ = self.store.model_path(spec["model"])
@@ -251,16 +269,45 @@ class Runner:
             pf = self.preflight(spec)
             if pf["block"]:
                 raise ValueError("preflight blocked: " + "; ".join(pf["block"]))
-            snap = self.snapshot()
+            restore = self._apply_power_cap(spec)
+            snap = self.snapshot(refresh=bool(restore))  # so the run records the cap it ran at
             path, _ = self.store.model_path(spec["model"])
             ctx = RunContext(self, run_id, spec, self.engine(spec["engine"]), path,
                              self.store.get(spec["model"]), snap)
+            ctx.power_restore = restore
             self.active = ctx
             self.db.update_run(run_id, status="running", started_at=time.time(),
                                snapshot_json=json.dumps(snap))
         threading.Thread(target=self._sample_loop, args=(ctx,), daemon=True, name="sampler").start()
         threading.Thread(target=self._work, args=(ctx,), daemon=True, name="worker").start()
         self.emit({"type": "status", "run_id": run_id, "status": "running"})
+
+    def _apply_power_cap(self, spec: dict) -> dict[int, float]:
+        """Set the run's power cap. Returns the previous cap per GPU, to restore afterwards."""
+        cap = spec.get("power_cap")
+        if not cap:
+            return {}
+        before = {g["index"]: g["power_limit"] for g in self.snapshot(refresh=True).get("gpus") or []
+                  if g.get("index") in spec["gpus"] and g.get("power_limit")}
+        done: dict[int, float] = {}
+        for gi, old in before.items():
+            ok, out = hw.set_power_limit(gi, cap)
+            if not ok:
+                self._restore_power_cap(done)
+                raise ValueError(f"could not set the power cap on GPU {gi}: {out.strip()[:200]}")
+            done[gi] = old
+        return done
+
+    def _restore_power_cap(self, restore: dict[int, float], ctx: RunContext | None = None) -> None:
+        for gi, old in restore.items():
+            ok, out = hw.set_power_limit(gi, old)
+            if ctx:
+                ctx.log("runner", f"power cap GPU {gi} restored to {old:g} W" if ok
+                        else f"could not restore power cap on GPU {gi} to {old:g} W: {out.strip()[:200]}")
+                if not ok:
+                    ctx.event("error", "power_cap", f"GPU {gi} power cap not restored to {old:g} W")
+        if restore:
+            self.snapshot(refresh=True)
 
     def abort(self, run_id: str, reason: str = "aborted by user") -> None:
         ctx = self.active
@@ -274,7 +321,8 @@ class Runner:
         status, error = "done", None
         try:
             ctx.log("runner", f"run {ctx.run_id}: engine {ctx.engine['name']}, model {ctx.model_path.name}, "
-                              f"GPUs {ctx.gpus}, modules {list(ctx.spec['modules'])}")
+                              f"GPUs {ctx.gpus}, modules {list(ctx.spec['modules'])}"
+                              + (f", power cap {ctx.spec['power_cap']} W" if ctx.spec.get("power_cap") else ""))
             for name, params in ctx.spec["modules"].items():
                 if ctx.abort.is_set():
                     break
@@ -288,6 +336,7 @@ class Runner:
             ctx.log("runner", traceback.format_exc())
         finally:
             ctx.abort.set()  # stops the sampler
+            self._restore_power_cap(ctx.power_restore, ctx)
             ctx.flush_logs()
             self.db.update_run(ctx.run_id, status=status, finished_at=time.time(), error=error)
             self.active = None

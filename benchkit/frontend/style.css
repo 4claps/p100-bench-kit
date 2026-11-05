@@ -68,6 +68,9 @@ td.best { font-weight: 700; color: var(--ok); }
 .charts { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
 .chart { min-height: 210px; min-width: 0; overflow: hidden; }
 .chart .title { font-size: .85rem; color: var(--muted); margin-bottom: 4px; }
+.chart .latest-row { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-bottom: 6px; font-variant-numeric: tabular-nums; }
+.chart .latest { font-weight: 600; white-space: nowrap; }
+.chart .latest::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 2px; background: var(--c); margin-right: 5px; }
 .log { max-height: 320px; overflow: auto; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px; }
 .events li { margin-bottom: 4px; }
 .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; z-index: 20; padding: 16px; }
@@ -79,3 +82,4 @@ td.best { font-weight: 700; color: var(--ok); }
 .kv dd { margin: 0; }
 .uplot { width: 100% !important; }
 @media (max-width: 600px) { main { padding: 10px; } .card { padding: 10px; } }
+.strong { font-weight: 600; }

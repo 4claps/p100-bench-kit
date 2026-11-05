@@ -12,7 +12,7 @@ import time
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 
-from . import export
+from . import export, hw
 from .modules import MODULE_ORDER, MODULES
 from .telemetry import DEFAULT_CHARTS, METRICS
 
@@ -70,6 +70,7 @@ async def system(request: Request, refresh: int = 0):
         "modules": [MODULES[n].describe() for n in MODULE_ORDER],
         "metrics": METRICS,
         "active_run": st.runner.active.run_id if st.runner.active else None,
+        "power": {"can_set": hw.can_set_power(), "choices": hw.POWER_CAP_CHOICES},
         "guardrails": {"low_clock_mhz": st.cfg.low_clock_mhz, "thermal_warn_c": st.cfg.thermal_warn_c,
                        "sustain_s": st.cfg.guardrail_sustain_s, "cooldown_c": st.cfg.cooldown_c},
     }
@@ -162,9 +163,11 @@ async def get_run(request: Request, run_id: str):
         b = r["spec"]["bundle"]
         return {"run": r | {"snapshot": b.get("snapshot")}, "results": b.get("results", []),
                 "summary": b.get("summary", {}), "agent_tasks": b.get("agent_tasks", []),
+                "throughput": b.get("throughput") or export.throughput(b.get("results", [])),
                 "events": b.get("events", []), "progress": None, "imported": True}
     results = st.db.get_results(run_id)
     return {"run": r, "results": results, "summary": export.summarize_results(results),
+            "throughput": export.throughput(results),
             "agent_tasks": st.db.get_agent_tasks(run_id), "events": st.db.get_events(run_id),
             "progress": st.runner.progress.get(run_id), "imported": False}
 

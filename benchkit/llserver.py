@@ -13,8 +13,10 @@ from .procs import Proc
 
 
 class LlamaServer:
-    def __init__(self, ctx, extra_args: list[str], ctx_size: int, mtp: bool = False):
+    def __init__(self, ctx, extra_args: list[str], ctx_size: int, mtp: bool = False,
+                 record: tuple[str, str] | None = None):
         self.ctx = ctx
+        self.record = record  # (module, variant): store every request's pp/tg rate as a result
         e = ctx.engine
         self.port = ctx.cfg.server_port
         self.argv = [f"{e['bin_dir']}/llama-server", "-m", str(ctx.model_path),
@@ -24,7 +26,12 @@ class LlamaServer:
         if mtp:
             if not e.get("mtp_args"):
                 raise RuntimeError(f"engine {e['name']} has no MTP support configured")
-            self.argv += e["mtp_args"]
+            # Keep the draft on the GPUs (the fork's mtp.sh passes -ngld 99; without it decode with MTP
+            # was slower than without) and give its KV cache the same type as the main one.
+            kv = {a: extra_args[i + 1] for i, a in enumerate(extra_args[:-1]) if a in ("-ctk", "-ctv")}
+            self.argv += [*e["mtp_args"], "-ngld", "99",
+                          *(["-ctkd", kv["-ctk"]] if "-ctk" in kv else []),
+                          *(["-ctvd", kv["-ctv"]] if "-ctv" in kv else [])]
         self.proc: Proc | None = None
         self.base = f"http://127.0.0.1:{self.port}"
 
@@ -33,6 +40,9 @@ class LlamaServer:
         ev = parse_print_timing(line)
         if ev:
             self.ctx.server_timing(ev)
+            if self.record and ev.kind in ("prompt", "eval") and ev.tokens:
+                self.ctx.result(self.record[0], 0, self.record[1], "pp" if ev.kind == "prompt" else "tg",
+                                ev.tokens_per_s, "t/s", {"tokens": ev.tokens})
 
     def start(self, timeout: float = 1200) -> None:
         self.ctx.log("runner", "starting llama-server: " + " ".join(self.argv))

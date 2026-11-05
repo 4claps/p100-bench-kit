@@ -55,6 +55,37 @@ def summarize_results(results: list[dict]) -> dict:
     return out
 
 
+def _rate_kind(module: str, metric: str) -> str | None:
+    """'prompt' or 'gen' for a tokens/s result, else None."""
+    if module == "speed":
+        return "prompt" if metric.startswith("pp") else "gen" if metric.startswith("tg") else None
+    last = metric.rsplit(".", 1)[-1]
+    return "prompt" if last == "pp" else "gen" if last == "tg" else None
+
+
+def throughput(results: list[dict]) -> dict:
+    """Prompt and generation tokens/s per module and variant: average and max.
+
+    The average is total tokens over total time when token counts are known (so a
+    10-token reply doesn't count as much as a 500-token one), else the plain mean.
+    """
+    groups: dict = defaultdict(list)
+    for r in results:
+        kind = _rate_kind(r["module"], r["metric"]) if r.get("unit") == "t/s" else None
+        if kind and r["value"]:
+            groups[(r["module"], r["variant"], kind)].append((r["value"], (r.get("extra") or {}).get("tokens")))
+    out: dict = {}
+    for (mod, var, kind), rows in sorted(groups.items()):
+        rates = [v for v, _ in rows]
+        if all(t for _, t in rows):
+            avg = sum(t for _, t in rows) / sum(t / v for v, t in rows)
+        else:
+            avg = statistics.fmean(rates)
+        out.setdefault(mod, {}).setdefault(var, {})[kind] = {
+            "avg": round(avg, 2), "max": round(max(rates), 2), "n": len(rates)}
+    return out
+
+
 def bundle(db: DB, run_id: str, kit_version: str) -> dict:
     run = db.get_run(run_id)
     if not run:
@@ -73,6 +104,7 @@ def bundle(db: DB, run_id: str, kit_version: str) -> dict:
         "snapshot": anonymize_snapshot(run["snapshot"]),
         "results": [{k: r[k] for k in ("module", "rep", "variant", "metric", "value", "unit")} for r in results],
         "summary": summarize_results(results),
+        "throughput": throughput(results),
         "agent_tasks": [{k: t[k] for k in ("task", "rep", "wall_s", "exit_code", "success")}
                         for t in db.get_agent_tasks(run_id)],
         "telemetry_summary": summarize(db.get_telemetry(run_id, max_points=100000)),
@@ -86,6 +118,13 @@ def validate_bundle(b: dict) -> None:
     for k in ("run", "spec", "summary"):
         if k not in b:
             raise ValueError(f"bundle is missing {k!r}")
+
+
+def power_cap_text(snap: dict | None, gpus: list[int] | None = None) -> str:
+    """'150 W', or '150/250 W' when the GPUs differ; '' if unknown."""
+    caps = sorted({g["power_limit"] for g in (snap or {}).get("gpus") or []
+                   if g.get("power_limit") and (gpus is None or g.get("index") in gpus)})
+    return "/".join(f"{c:g}" for c in caps) + " W" if caps else ""
 
 
 def hardware_line(snap: dict | None) -> str:
@@ -110,7 +149,19 @@ def markdown(b: dict) -> str:
              + (f" ({spec.get('split')} split)" if len(spec.get("gpus") or []) > 1 else ""),
              f"- Status: {run.get('status')}" + (" (marked invalid: " + str(run.get('invalid_reason')) + ")"
                                                  if run.get("invalid") else ""),
+             f"- Power cap: {power_cap_text(b.get('snapshot'), spec.get('gpus')) or 'unknown'}"
+             + (" (set for this run)" if spec.get("power_cap") else ""),
              f"- Comparable: {'yes' if spec.get('comparable') else 'no (custom model)'}", ""]
+    tp = b.get("throughput") or throughput(b.get("results") or [])
+    if tp:
+        lines += ["## Tokens per second", "", "| module | variant | prompt avg | prompt max | generation avg | generation max | n |",
+                  "|---|---|---|---|---|---|---|"]
+        for mod, variants in tp.items():
+            for var, k in variants.items():
+                pr, ge = k.get("prompt") or {}, k.get("gen") or {}
+                lines.append(f"| {mod} | {var} | {pr.get('avg', '')} | {pr.get('max', '')} | {ge.get('avg', '')} | "
+                             f"{ge.get('max', '')} | {max(pr.get('n', 0), ge.get('n', 0))} |")
+        lines.append("")
     for mod, variants in b["summary"].items():
         lines += [f"## {mod}", "", "| variant | metric | median | min | max | n |", "|---|---|---|---|---|---|"]
         for var, mets in variants.items():

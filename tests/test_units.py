@@ -38,7 +38,7 @@ def test_bench_jsonl_and_metric_names():
 
 
 def test_gpu_csv_and_sample():
-    g = hw.parse_gpu_csv("0, Tesla P100-PCIE-16GB, GPU-x, 00000000:03:00.0, 580.1, 86.0, 16384, 250.00, 250.00, 3, 3, 16, 16, 1328, 715")
+    g = hw.parse_gpu_csv("0, Tesla P100-PCIE-16GB, GPU-x, 00000000:03:00.0, 580.1, 86.0, 16384, 250.00, 125.00, 250.00, 250.00, 3, 3, 16, 16, 1328, 715")
     assert g[0]["name"] == "Tesla P100-PCIE-16GB" and g[0]["memory_total"] == 16384 and g[0]["power_limit"] == 250.0
     s = telemetry.parse_gpu_sample("1, 55, 1328, 715, 140.2, 98, 60, 9000, [N/A], 3, 16, P0, 0x0")
     assert s["1"]["sm_mhz"] == 1328 and s["1"]["fan_pct"] is None and s["1"]["pstate"] == "P0"
@@ -66,6 +66,24 @@ Memory Device
 
 
 # ---------------- guardrails ----------------
+def test_dmi_dump_points_entry_at_offset_32():
+    table = b"\x11" * 40
+    sm2 = bytearray(b"_SM_" + bytes(27))
+    sm2[5] = 31
+    sm2[0x10:0x15] = b"_DMI_"
+    sm2[0x18:0x1C] = (0xF0000).to_bytes(4, "little")
+    sm3 = bytearray(b"_SM3_" + bytes(19))
+    sm3[6] = 24
+    sm3[0x10:0x18] = (0x7F000000).to_bytes(8, "little")
+    for ep, at, width in ((sm2, 0x18, 4), (sm3, 0x10, 8)):
+        d = hw.dmi_dump(bytes(ep), table)
+        assert len(d) == 32 + len(table) and d[32:] == table
+        assert int.from_bytes(d[at:at + width], "little") == 32
+        assert sum(d[:ep[5] if ep[:4] == b"_SM_" else ep[6]]) % 256 == 0
+    assert sum(hw.dmi_dump(bytes(sm2), table)[0x10:0x1F]) % 256 == 0
+    assert hw.dmi_dump(b"junk", table) is None
+
+
 def test_guardrails_sustain_once_and_recover():
     g = Guardrails(busy_util_pct=50, low_clock_mhz=1000, thermal_warn_c=80, sustain_s=10)
     busy_low = {"util_pct": 99, "sm_mhz": 405, "temp_c": 50}
@@ -190,3 +208,34 @@ def test_split_args():
     assert split_args(e, [0, 1]) == ["-sm", "tensor", "-ts", "1/1"]
     assert split_args(e, [0, 1, 2, 3], "layer") == ["-sm", "layer", "-ts", "1/1/1/1"]
     assert split_args(e, [0, 1], "bogus") == ["-sm", "tensor", "-ts", "1/1"]
+
+
+def test_throughput_weights_by_tokens():
+    rows = [
+        {"module": "speed", "variant": "kv=q4_0", "metric": "pp512@0", "value": 400.0, "unit": "t/s"},
+        {"module": "speed", "variant": "kv=q4_0", "metric": "tg128@0", "value": 20.0, "unit": "t/s"},
+        {"module": "speed", "variant": "kv=q4_0", "metric": "tg128@4096", "value": 30.0, "unit": "t/s"},
+        {"module": "server", "variant": "mtp=on", "metric": "code.tg", "value": 50.0, "unit": "t/s", "extra": {"tokens": 500}},
+        {"module": "server", "variant": "mtp=on", "metric": "code.draft_accept", "value": 0.7, "unit": ""},
+        # a 10-token reply at 10 t/s barely moves the average: 510 tokens in 11 s
+        {"module": "agent", "variant": "mtp=on", "metric": "tg", "value": 50.0, "unit": "t/s", "extra": {"tokens": 500}},
+        {"module": "agent", "variant": "mtp=on", "metric": "tg", "value": 10.0, "unit": "t/s", "extra": {"tokens": 10}},
+        {"module": "agent", "variant": "all", "metric": "total.wall", "value": 99.0, "unit": "s"},
+    ]
+    tp = export.throughput(rows)
+    assert tp["speed"]["kv=q4_0"]["gen"] == {"avg": 25.0, "max": 30.0, "n": 2}
+    assert tp["speed"]["kv=q4_0"]["prompt"]["avg"] == 400.0
+    assert tp["server"]["mtp=on"] == {"gen": {"avg": 50.0, "max": 50.0, "n": 1}}
+    assert tp["agent"]["mtp=on"]["gen"] == {"avg": round(510 / 11, 2), "max": 50.0, "n": 2}
+    assert "all" not in tp.get("agent", {})
+
+
+def test_power_cap_text_and_gpu_fields():
+    snap = {"gpus": [{"index": 0, "power_limit": 150.0}, {"index": 1, "power_limit": 150.0},
+                     {"index": 2, "power_limit": 250.0}]}
+    assert export.power_cap_text(snap) == "150/250 W"
+    assert export.power_cap_text(snap, [0, 1]) == "150 W"
+    assert export.power_cap_text({"gpus": []}) == ""
+    g = hw.parse_gpu_csv("0, Tesla P100-PCIE-16GB, GPU-x, 00000000:01:00.0, 580.1, 86.00.3B.00.01, 16384, "
+                         "150.00, 125.00, 250.00, 250.00, 3, 3, 8, 16, 1328, 715")[0]
+    assert (g["power_limit"], g["power_min_limit"], g["power_max_limit"], g["power_default_limit"]) == (150, 125, 250, 250)
