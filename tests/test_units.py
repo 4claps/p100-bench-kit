@@ -38,7 +38,7 @@ def test_bench_jsonl_and_metric_names():
 
 
 def test_gpu_csv_and_sample():
-    g = hw.parse_gpu_csv("0, Tesla P100-PCIE-16GB, GPU-x, 00000000:03:00.0, 580.1, 86.0, 16384, 250.00, 250.00, 3, 3, 16, 16, 1328, 715")
+    g = hw.parse_gpu_csv("0, Tesla P100-PCIE-16GB, GPU-x, 00000000:03:00.0, 580.1, 86.0, 16384, 250.00, 125.00, 250.00, 250.00, 3, 3, 16, 16, 1328, 715")
     assert g[0]["name"] == "Tesla P100-PCIE-16GB" and g[0]["memory_total"] == 16384 and g[0]["power_limit"] == 250.0
     s = telemetry.parse_gpu_sample("1, 55, 1328, 715, 140.2, 98, 60, 9000, [N/A], 3, 16, P0, 0x0")
     assert s["1"]["sm_mhz"] == 1328 and s["1"]["fan_pct"] is None and s["1"]["pstate"] == "P0"
@@ -228,3 +228,14 @@ def test_throughput_weights_by_tokens():
     assert tp["server"]["mtp=on"] == {"gen": {"avg": 50.0, "max": 50.0, "n": 1}}
     assert tp["agent"]["mtp=on"]["gen"] == {"avg": round(510 / 11, 2), "max": 50.0, "n": 2}
     assert "all" not in tp.get("agent", {})
+
+
+def test_power_cap_text_and_gpu_fields():
+    snap = {"gpus": [{"index": 0, "power_limit": 150.0}, {"index": 1, "power_limit": 150.0},
+                     {"index": 2, "power_limit": 250.0}]}
+    assert export.power_cap_text(snap) == "150/250 W"
+    assert export.power_cap_text(snap, [0, 1]) == "150 W"
+    assert export.power_cap_text({"gpus": []}) == ""
+    g = hw.parse_gpu_csv("0, Tesla P100-PCIE-16GB, GPU-x, 00000000:01:00.0, 580.1, 86.00.3B.00.01, 16384, "
+                         "150.00, 125.00, 250.00, 250.00, 3, 3, 8, 16, 1328, 715")[0]
+    assert (g["power_limit"], g["power_min_limit"], g["power_max_limit"], g["power_default_limit"]) == (150, 125, 250, 250)

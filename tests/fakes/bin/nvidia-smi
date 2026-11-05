@@ -11,7 +11,8 @@ if "--query-gpu=" not in a:
 fields = a.split("--query-gpu=")[1].split()[0].split(",")
 vals = {"index": None, "name": "Tesla P100-PCIE-16GB", "uuid": "GPU-fake-{i}", "pci.bus_id": "00000000:0{i}:00.0",
         "driver_version": "580.00", "vbios_version": "86.00", "memory.total": "16384", "power.limit": "250.00",
-        "power.max_limit": "250.00", "pcie.link.gen.current": "3", "pcie.link.gen.max": "3",
+        "power.min_limit": "125.00", "power.max_limit": "250.00", "power.default_limit": "250.00",
+        "pcie.link.gen.current": "3", "pcie.link.gen.max": "3",
         "pcie.link.width.current": "16", "pcie.link.width.max": "16", "clocks.max.sm": "1328",
         "clocks.max.mem": "715", "temperature.gpu": "41", "clocks.sm": "1328", "clocks.mem": "715",
         "power.draw": "120.5", "utilization.gpu": "95", "utilization.memory": "60", "memory.used": "9000",

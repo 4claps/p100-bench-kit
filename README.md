@@ -35,6 +35,7 @@ docker run -d --name bench --gpus all -p 8090:8090 \
   -v bench-data:/data \
   -v /sys/firmware/dmi/tables:/host-dmi:ro \
   p100-bench-kit
+# optional: add --cap-add SYS_ADMIN to let runs change the GPU power cap (see Security)
 docker logs bench                          # shows where the login token is
 docker exec bench cat /data/token          # the token itself
 ```
@@ -105,6 +106,13 @@ All optional, as environment variables:
   Docker hides those from containers, so the run command mounts the host's
   copy read-only at `/host-dmi`. Leave that line out and the RAM fields show
   as unknown; everything else still works.
+- New Run shows each GPU's current power cap and records it with the run.
+  Changing it for a run (125-250 W, within what the cards accept) needs
+  `--cap-add SYS_ADMIN` on `docker run`, because `nvidia-smi -pl` is refused
+  without it. The kit sets the cap on the selected GPUs when the run starts and
+  puts the old one back when it ends, even if the run fails or is aborted. If
+  the container is killed mid-run, the cap stays until you reset it
+  (`nvidia-smi -pl <watts>`) or reboot. Without the flag the option is greyed out.
 
 ## Development
 

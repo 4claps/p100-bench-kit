@@ -195,7 +195,7 @@ function readParam(mod, key, spec) {
 }
 
 async function viewRun(_, gen = state.gen) {
-  const sys = state.system;
+  const sys = state.system = await api("/system?refresh=1");  // fresh power caps
   const models = state.models = await api("/models");
   const presets = await api("/presets");
   fresh(gen);
@@ -228,6 +228,7 @@ async function viewRun(_, gen = state.gen) {
       <div class="small muted">${esc(m.description)}</div>
       <div class="params">${Object.entries(m.params).map(([k, s]) => paramInput(m.name, k, s, s.default)).join("")}</div>
     </div>`).join("")}</div>
+  ${powerCapCard(sys)}
   <div class="card">
     <h3>Guardrails</h3>
     <div class="small muted">Warnings always show. Tick to also abort the run when one fires (after ${esc(sys.guardrails.sustain_s)} s sustained).</div>
@@ -238,11 +239,36 @@ async function viewRun(_, gen = state.gen) {
   <div id="r-confirm"></div>`;
   $$(".module").forEach((el) => $(".mod-on", el).addEventListener("change", (e) => el.classList.toggle("off", !e.target.checked)));
   $("#r-review").onclick = reviewRun;
+  $("#pc-change").addEventListener("change", (e) => ($("#pc-choices").hidden = !e.target.checked));
   $("#r-preset-save").onclick = async () => {
     const name = $("#r-preset-name").value.trim(); if (!name) return toast("Name the preset first");
     await api("/presets/" + encodeURIComponent(name), { method: "PUT", json: { spec: collectSpec(true) } }); toast("Preset saved"); route();
   };
   $("#r-preset-load").onclick = () => { const p = presets.find((x) => x.name === $("#r-preset").value); if (p) applySpec(p.spec); };
+}
+
+// ---------------- power cap ----------------
+function powerCapText(snap, gpus) {
+  const caps = [...new Set((snap.gpus || []).filter((g) => g.power_limit && (!gpus || gpus.includes(g.index))).map((g) => g.power_limit))].sort((a, b) => a - b);
+  return caps.length ? caps.map((c) => +c.toFixed(0)).join("/") + " W" : "";
+}
+
+function powerCapCard(sys) {
+  const gpus = sys.snapshot.gpus || [];
+  const cur = powerCapText(sys.snapshot);
+  const one = gpus.length && new Set(gpus.map((g) => g.power_limit)).size === 1 ? Math.round(gpus[0].power_limit) : null;
+  const lo = Math.max(...gpus.map((g) => g.power_min_limit || 0)), hi = Math.min(...gpus.map((g) => g.power_max_limit || 1e9));
+  const choices = sys.power.choices.filter((w) => w >= lo && w <= hi);
+  if (one && !choices.includes(one)) choices.push(one), choices.sort((a, b) => a - b);
+  const range = gpus.length && gpus[0].power_max_limit ? ` The cards accept ${+lo.toFixed(0)}-${+hi.toFixed(0)} W${gpus[0].power_default_limit ? ", default " + +gpus[0].power_default_limit.toFixed(0) + " W" : ""}.` : "";
+  return `<div class="card">
+    <h3>Power cap</h3>
+    <div>Current cap: <b>${esc(cur || "unknown")}</b>${gpus.length > 1 ? " (all GPUs)" : ""}.<span class="small muted">${esc(range)}</span></div>
+    <label style="display:block;margin-top:8px"><input type="checkbox" id="pc-change" ${sys.power.can_set ? "" : "disabled"}> Change the power cap for this run?</label>
+    <div class="chips" id="pc-choices" hidden>${choices.map((w) => `<label><input type="radio" name="pc" value="${w}" ${w === one ? "checked" : ""}> ${w} W${w === one ? " (current)" : ""}</label>`).join("")}</div>
+    <div class="small muted">${sys.power.can_set ? "Set on the selected GPUs when the run starts and put back to the current cap when it ends."
+      : "To change it from here, start the container with <code>--cap-add SYS_ADMIN</code>."}</div>
+  </div>`;
 }
 
 function collectSpec(forPreset = false) {
@@ -254,7 +280,8 @@ function collectSpec(forPreset = false) {
   }
   const abort_on = [$("#g-low").checked && "low_clock", $("#g-thermal").checked && "thermal"].filter(Boolean);
   return { model: $("#r-model").value, engine: $("#r-engine").value, split: $("#r-split").value, label: forPreset ? "" : $("#r-label").value,
-    gpus: $$("#r-gpus input:checked").map((i) => +i.value), modules, abort_on };
+    gpus: $$("#r-gpus input:checked").map((i) => +i.value), modules, abort_on,
+    power_cap: $("#pc-change").checked && $("input[name=pc]:checked") ? +$("input[name=pc]:checked").value : null };
 }
 
 function applySpec(spec) {
@@ -278,6 +305,10 @@ function applySpec(spec) {
   }
   $("#g-low").checked = (spec.abort_on || []).includes("low_clock");
   $("#g-thermal").checked = (spec.abort_on || []).includes("thermal");
+  const pc = spec.power_cap && $(`input[name=pc][value="${spec.power_cap}"]`);
+  if (pc && !$("#pc-change").disabled) pc.checked = true;
+  $("#pc-change").checked = !!(pc && !$("#pc-change").disabled);
+  $("#pc-choices").hidden = !$("#pc-change").checked;
 }
 
 async function reviewRun() {
@@ -290,6 +321,7 @@ async function reviewRun() {
     <h2>Confirm</h2>
     <dl class="kv"><dt>Model</dt><dd>${esc(r.spec.model)}</dd><dt>Engine</dt><dd>${esc(r.spec.engine)}</dd>
       <dt>GPUs</dt><dd>${esc(r.spec.gpus.join(", "))}${r.spec.gpus.length > 1 ? ", " + esc(r.spec.split) + " split" : ""}</dd><dt>Modules</dt><dd>${esc(Object.keys(r.spec.modules).join(", "))}</dd>
+      <dt>Power cap</dt><dd>${r.spec.power_cap ? esc(r.spec.power_cap + " W for this run, then back to " + powerCapText(state.system.snapshot, r.spec.gpus)) : esc(powerCapText(state.system.snapshot, r.spec.gpus) + " (unchanged)")}</dd>
       <dt>Estimated time</dt><dd>about ${esc(dur(r.estimate_s))} (rough)</dd></dl>
     ${pf.block.length ? `<h3 class="err">Blocked</h3><ul>${pf.block.map((b) => `<li class="err">${esc(b)}</li>`).join("")}</ul>` : ""}
     ${pf.warn.length ? `<h3 class="warn">Warnings</h3><ul>${pf.warn.map((b) => `<li class="warn">${esc(b)}</li>`).join("")}</ul>` : ""}
@@ -448,7 +480,8 @@ async function viewDetail(id, gen = state.gen) {
     <div class="card"><h2>Run</h2><dl class="kv">
       <dt>Model</dt><dd>${esc(spec.model)}${spec.comparable === false ? " (custom, not comparable)" : ""}</dd><dt>Engine</dt><dd>${esc(spec.engine)}</dd>
       <dt>GPUs</dt><dd>${esc((spec.gpus || []).join(", "))}${(spec.gpus || []).length > 1 && spec.split ? ", " + esc(spec.split) + " split" : ""}</dd><dt>Started</dt><dd>${esc(when(r.started_at))}</dd>
-      <dt>Finished</dt><dd>${esc(when(r.finished_at))}</dd><dt>Hardware</dt><dd>${esc(hwLine(snap))}</dd></dl>
+      <dt>Finished</dt><dd>${esc(when(r.finished_at))}</dd><dt>Hardware</dt><dd>${esc(hwLine(snap))}</dd>
+      <dt>Power cap</dt><dd>${esc(powerCapText(snap, spec.gpus) || "unknown")}${spec.power_cap ? " (set for this run)" : ""}</dd></dl>
       <div class="row" style="margin-top:10px">
         <a href="/api/runs/${esc(id)}/export.json" download><button class="secondary">Download result file</button></a>
         <a href="/api/runs/${esc(id)}/export.md" target="_blank" rel="noopener"><button class="secondary">Markdown</button></a>

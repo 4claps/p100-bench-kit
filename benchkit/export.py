@@ -120,6 +120,13 @@ def validate_bundle(b: dict) -> None:
             raise ValueError(f"bundle is missing {k!r}")
 
 
+def power_cap_text(snap: dict | None, gpus: list[int] | None = None) -> str:
+    """'150 W', or '150/250 W' when the GPUs differ; '' if unknown."""
+    caps = sorted({g["power_limit"] for g in (snap or {}).get("gpus") or []
+                   if g.get("power_limit") and (gpus is None or g.get("index") in gpus)})
+    return "/".join(f"{c:g}" for c in caps) + " W" if caps else ""
+
+
 def hardware_line(snap: dict | None) -> str:
     if not snap:
         return "unknown hardware"
@@ -142,6 +149,8 @@ def markdown(b: dict) -> str:
              + (f" ({spec.get('split')} split)" if len(spec.get("gpus") or []) > 1 else ""),
              f"- Status: {run.get('status')}" + (" (marked invalid: " + str(run.get('invalid_reason')) + ")"
                                                  if run.get("invalid") else ""),
+             f"- Power cap: {power_cap_text(b.get('snapshot'), spec.get('gpus')) or 'unknown'}"
+             + (" (set for this run)" if spec.get("power_cap") else ""),
              f"- Comparable: {'yes' if spec.get('comparable') else 'no (custom model)'}", ""]
     tp = b.get("throughput") or throughput(b.get("results") or [])
     if tp:

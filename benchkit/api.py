@@ -12,7 +12,7 @@ import time
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 
-from . import export
+from . import export, hw
 from .modules import MODULE_ORDER, MODULES
 from .telemetry import DEFAULT_CHARTS, METRICS
 
@@ -70,6 +70,7 @@ async def system(request: Request, refresh: int = 0):
         "modules": [MODULES[n].describe() for n in MODULE_ORDER],
         "metrics": METRICS,
         "active_run": st.runner.active.run_id if st.runner.active else None,
+        "power": {"can_set": hw.can_set_power(), "choices": hw.POWER_CAP_CHOICES},
         "guardrails": {"low_clock_mhz": st.cfg.low_clock_mhz, "thermal_warn_c": st.cfg.thermal_warn_c,
                        "sustain_s": st.cfg.guardrail_sustain_s, "cooldown_c": st.cfg.cooldown_c},
     }

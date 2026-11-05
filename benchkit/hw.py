@@ -17,7 +17,7 @@ from pathlib import Path
 
 GPU_FIELDS = [
     "index", "name", "uuid", "pci.bus_id", "driver_version", "vbios_version",
-    "memory.total", "power.limit", "power.max_limit",
+    "memory.total", "power.limit", "power.min_limit", "power.max_limit", "power.default_limit",
     "pcie.link.gen.current", "pcie.link.gen.max",
     "pcie.link.width.current", "pcie.link.width.max",
     "clocks.max.sm", "clocks.max.mem",
@@ -150,6 +150,19 @@ def _read(path: str) -> str | None:
         return Path(path).read_text().strip()
     except OSError:
         return None
+
+
+POWER_CAP_CHOICES = [125, 150, 175, 200, 225, 250]
+
+
+def can_set_power() -> bool:
+    """nvidia-smi -pl needs root and, in a container, CAP_SYS_ADMIN (--cap-add SYS_ADMIN)."""
+    m = re.search(r"^CapEff:\s*([0-9a-f]+)", _read("/proc/self/status") or "", re.M)
+    return os.geteuid() == 0 and bool(m) and bool(int(m.group(1), 16) >> 21 & 1)
+
+
+def set_power_limit(gpu: int, watts: float) -> tuple[bool, str]:
+    return run_cmd(["nvidia-smi", "-i", str(gpu), "-pl", f"{watts:g}"])
 
 
 def snapshot(engines: list[dict] | None = None) -> dict:
