@@ -66,6 +66,24 @@ Memory Device
 
 
 # ---------------- guardrails ----------------
+def test_dmi_dump_points_entry_at_offset_32():
+    table = b"\x11" * 40
+    sm2 = bytearray(b"_SM_" + bytes(27))
+    sm2[5] = 31
+    sm2[0x10:0x15] = b"_DMI_"
+    sm2[0x18:0x1C] = (0xF0000).to_bytes(4, "little")
+    sm3 = bytearray(b"_SM3_" + bytes(19))
+    sm3[6] = 24
+    sm3[0x10:0x18] = (0x7F000000).to_bytes(8, "little")
+    for ep, at, width in ((sm2, 0x18, 4), (sm3, 0x10, 8)):
+        d = hw.dmi_dump(bytes(ep), table)
+        assert len(d) == 32 + len(table) and d[32:] == table
+        assert int.from_bytes(d[at:at + width], "little") == 32
+        assert sum(d[:ep[5] if ep[:4] == b"_SM_" else ep[6]]) % 256 == 0
+    assert sum(hw.dmi_dump(bytes(sm2), table)[0x10:0x1F]) % 256 == 0
+    assert hw.dmi_dump(b"junk", table) is None
+
+
 def test_guardrails_sustain_once_and_recover():
     g = Guardrails(busy_util_pct=50, low_clock_mhz=1000, thermal_warn_c=80, sustain_s=10)
     busy_low = {"util_pct": 99, "sm_mhz": 405, "temp_c": 50}

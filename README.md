@@ -32,6 +32,7 @@ docker build -t p100-bench-kit .          # 30–90 min: compiles two llama.cpp 
 docker run -d --name bench --gpus all -p 8090:8090 \
   -v /path/to/your/models:/models \
   -v bench-data:/data \
+  -v /sys/firmware/dmi/tables:/host-dmi:ro \
   p100-bench-kit
 docker logs bench                          # shows where the login token is
 docker exec bench cat /data/token          # the token itself
@@ -100,7 +101,9 @@ All optional, as environment variables:
 - Agent tasks run shell commands chosen by the model. They run as an
   unprivileged user inside the container, in a scratch folder under `/data/agent`.
 - RAM type and speed come from `dmidecode`, which reads the firmware tables.
-  If your container setup blocks that, the RAM fields show as unknown.
+  Docker hides those from containers, so the run command mounts the host's
+  copy read-only at `/host-dmi`. Leave that line out and the RAM fields show
+  as unknown; everything else still works.
 
 ## Development
 
