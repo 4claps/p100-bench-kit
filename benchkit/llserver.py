@@ -24,7 +24,12 @@ class LlamaServer:
         if mtp:
             if not e.get("mtp_args"):
                 raise RuntimeError(f"engine {e['name']} has no MTP support configured")
-            self.argv += e["mtp_args"]
+            # Keep the draft on the GPUs (the fork's mtp.sh passes -ngld 99; without it decode with MTP
+            # was slower than without) and give its KV cache the same type as the main one.
+            kv = {a: extra_args[i + 1] for i, a in enumerate(extra_args[:-1]) if a in ("-ctk", "-ctv")}
+            self.argv += [*e["mtp_args"], "-ngld", "99",
+                          *(["-ctkd", kv["-ctk"]] if "-ctk" in kv else []),
+                          *(["-ctvd", kv["-ctv"]] if "-ctv" in kv else [])]
         self.proc: Proc | None = None
         self.base = f"http://127.0.0.1:{self.port}"
 
