@@ -53,9 +53,10 @@ blocks the run if another process holds them.
 | Engine | Source | Multi-GPU | Notes |
 |---|---|---|---|
 | `upstream` | ggml-org/llama.cpp, pinned commit | layer split | the fair baseline across hardware |
-| `kmic` | Kmic-68/llama.cpp, pinned commit | tensor split | Pascal-tuned fork; uses its QUICKSTART env (P2P, graphs on pre-Volta) |
+| `kmic` | Kmic-68/llama.cpp, pinned commit | tensor split | Pascal-tuned fork; uses its QUICKSTART env (P2P, graphs on pre-Volta). Built for P100 (sm_60) only, as the fork's own build guide does |
 
 Commits are pinned in the `Dockerfile` (`UPSTREAM_COMMIT`, `KMIC_COMMIT`).
+On a P40 or V100, use the `upstream` engine.
 Builds use CUDA 12.9, the last toolkit line that still targets sm_60/sm_70.
 The CPU backend is built for every x86 variant and picked at runtime, so old
 Xeons without AVX2 still work.
