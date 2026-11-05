@@ -184,7 +184,8 @@ class Runner:
         split = str(spec.get("split") or "")
         if split and split not in engines_mod.SPLIT_MODES:
             raise ValueError(f"split must be one of {engines_mod.SPLIT_MODES} (or empty for the engine default)")
-        abort_on = [a for a in spec.get("abort_on") or [] if a in ("low_clock", "thermal")]
+        # both guardrails abort by default; an explicit [] turns them off
+        abort_on = [a for a in spec.get("abort_on", ["low_clock", "thermal"]) or [] if a in ("low_clock", "thermal")]
         return {"model": model_id, "engine": engine["name"], "gpus": gpus, "modules": norm,
                 "split": split or engine.get("multi_gpu_split", "layer"), "abort_on": abort_on,
                 "label": str(spec.get("label") or "")[:120], "comparable": comparable}

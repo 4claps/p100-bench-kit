@@ -231,8 +231,8 @@ async function viewRun(_, gen = state.gen) {
   <div class="card">
     <h3>Guardrails</h3>
     <div class="small muted">Warnings always show. Tick to also abort the run when one fires (after ${esc(sys.guardrails.sustain_s)} s sustained).</div>
-    <div class="chips"><label><input type="checkbox" id="g-low"> abort on low clock (&lt; ${esc(sys.guardrails.low_clock_mhz)} MHz while busy)</label>
-      <label><input type="checkbox" id="g-thermal"> abort on temperature &gt; ${esc(sys.guardrails.thermal_warn_c)} °C</label></div>
+    <div class="chips"><label><input type="checkbox" id="g-low" checked> abort on low clock (&lt; ${esc(sys.guardrails.low_clock_mhz)} MHz while busy)</label>
+      <label><input type="checkbox" id="g-thermal" checked> abort on temperature &gt; ${esc(sys.guardrails.thermal_warn_c)} °C</label></div>
     <div class="row" style="margin-top:12px"><button id="r-review">Review run</button></div>
   </div>
   <div id="r-confirm"></div>`;

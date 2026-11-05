@@ -23,7 +23,8 @@ temperature, SM and memory clocks, power, utilization, VRAM, PCIe link, CPU
 load, clock, temperature and package power, RAM and fan speeds once a second.
 Two guardrails watch every sample: a busy GPU stuck below 1000 MHz (stuck
 clocks have invalidated real results before) and a GPU above 80 °C. Each
-warns once when the condition has held for 10 s, and can optionally abort the run.
+warns once when the condition has held for 10 s and, by default, aborts the run
+(untick it on New Run to only warn).
 
 ## Quick start
 
