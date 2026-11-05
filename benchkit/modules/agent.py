@@ -108,7 +108,8 @@ class AgentModule(Module):
         home.mkdir(parents=True, exist_ok=True)
         model_label = f"benchkit-{ctx.run_id}"
         ctx.cool_down()
-        with LlamaServer(ctx, ["-ctk", p["kv"], "-ctv", p["kv"]], p["ctx"], mtp=use_mtp) as srv:
+        with LlamaServer(ctx, ["-ctk", p["kv"], "-ctv", p["kv"]], p["ctx"], mtp=use_mtp,
+                         record=(self.name, f"mtp={'on' if use_mtp else 'off'}")) as srv:
             (home / "config.yaml").write_text(yaml.safe_dump(hermes_config(
                 srv.base + "/v1", model_label, p["ctx"], p["max_tokens"], p["task_timeout_s"])))
             steps = p["reps"] * len(p["tasks"])

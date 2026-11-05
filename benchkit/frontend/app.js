@@ -386,6 +386,20 @@ function summarizeLocal(results) {
 
 const MOD_ORDER = ["speed", "server", "offload", "agent"];
 const byModule = (a, b) => MOD_ORDER.indexOf(a[0]) - MOD_ORDER.indexOf(b[0]);
+// prompt / generation tokens/s per module and variant, average and max
+function throughputTable(tp) {
+  const rows = [];
+  for (const [mod, vars] of Object.entries(tp || {}).sort(byModule)) for (const [v, k] of Object.entries(vars)) {
+    const pr = k.prompt || {}, ge = k.gen || {};
+    rows.push(`<tr><td>${esc(mod)}</td><td>${esc(v)}</td>
+      <td class="num">${fmt(pr.avg, 1)}</td><td class="num muted">${fmt(pr.max, 1)}</td>
+      <td class="num strong">${fmt(ge.avg, 1)}</td><td class="num">${fmt(ge.max, 1)}</td><td class="num muted">${Math.max(pr.n || 0, ge.n || 0)}</td></tr>`);
+  }
+  return rows.length ? `<table><tr><th>module</th><th>variant</th><th class="num">prompt avg</th><th class="num">prompt max</th>
+    <th class="num">generation avg</th><th class="num">generation max</th><th class="num">n</th></tr>${rows.join("")}</table>
+    <p class="small muted">Tokens per second. Averages weight each request by its token count where the count is known.</p>` : "";
+}
+
 function resultsTable(summary) {
   const rows = [];
   for (const [mod, vars] of Object.entries(summary).sort(byModule)) for (const [v, mets] of Object.entries(vars)) for (const [m, s] of Object.entries(mets))
@@ -446,6 +460,7 @@ async function viewDetail(id, gen = state.gen) {
         <input type="text" id="d-reason" placeholder="reason" value="${esc(r.invalid_reason || "")}" style="flex:1"></div>
       <div class="row" style="margin-top:8px"><button id="d-save">Save</button></div></div>`}
   </div>
+  ${throughputTable(d.throughput) ? `<div class="card"><h2>Tokens per second</h2><div class="table-wrap">${throughputTable(d.throughput)}</div></div>` : ""}
   <div class="card"><h2>Results</h2><div class="table-wrap">${resultsTable(d.summary)}</div></div>
   ${d.agent_tasks.length ? `<div class="card"><h2>Agent tasks</h2><div class="table-wrap"><table><tr><th>task</th><th class="num">run</th><th class="num">wall</th><th class="num">exit</th><th>pass</th></tr>
     ${d.agent_tasks.map((t) => `<tr><td>${esc(t.task)}</td><td class="num">${t.rep + 1}</td><td class="num">${fmt(t.wall_s, 0)} s</td><td class="num">${esc(t.exit_code)}</td><td class="${t.success ? "ok" : "err"}">${t.success ? "pass" : "fail"}</td></tr>`).join("")}</table></div></div>` : ""}

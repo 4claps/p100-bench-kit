@@ -208,3 +208,23 @@ def test_split_args():
     assert split_args(e, [0, 1]) == ["-sm", "tensor", "-ts", "1/1"]
     assert split_args(e, [0, 1, 2, 3], "layer") == ["-sm", "layer", "-ts", "1/1/1/1"]
     assert split_args(e, [0, 1], "bogus") == ["-sm", "tensor", "-ts", "1/1"]
+
+
+def test_throughput_weights_by_tokens():
+    rows = [
+        {"module": "speed", "variant": "kv=q4_0", "metric": "pp512@0", "value": 400.0, "unit": "t/s"},
+        {"module": "speed", "variant": "kv=q4_0", "metric": "tg128@0", "value": 20.0, "unit": "t/s"},
+        {"module": "speed", "variant": "kv=q4_0", "metric": "tg128@4096", "value": 30.0, "unit": "t/s"},
+        {"module": "server", "variant": "mtp=on", "metric": "code.tg", "value": 50.0, "unit": "t/s", "extra": {"tokens": 500}},
+        {"module": "server", "variant": "mtp=on", "metric": "code.draft_accept", "value": 0.7, "unit": ""},
+        # a 10-token reply at 10 t/s barely moves the average: 510 tokens in 11 s
+        {"module": "agent", "variant": "mtp=on", "metric": "tg", "value": 50.0, "unit": "t/s", "extra": {"tokens": 500}},
+        {"module": "agent", "variant": "mtp=on", "metric": "tg", "value": 10.0, "unit": "t/s", "extra": {"tokens": 10}},
+        {"module": "agent", "variant": "all", "metric": "total.wall", "value": 99.0, "unit": "s"},
+    ]
+    tp = export.throughput(rows)
+    assert tp["speed"]["kv=q4_0"]["gen"] == {"avg": 25.0, "max": 30.0, "n": 2}
+    assert tp["speed"]["kv=q4_0"]["prompt"]["avg"] == 400.0
+    assert tp["server"]["mtp=on"] == {"gen": {"avg": 50.0, "max": 50.0, "n": 1}}
+    assert tp["agent"]["mtp=on"]["gen"] == {"avg": round(510 / 11, 2), "max": 50.0, "n": 2}
+    assert "all" not in tp.get("agent", {})

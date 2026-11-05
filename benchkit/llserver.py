@@ -13,8 +13,10 @@ from .procs import Proc
 
 
 class LlamaServer:
-    def __init__(self, ctx, extra_args: list[str], ctx_size: int, mtp: bool = False):
+    def __init__(self, ctx, extra_args: list[str], ctx_size: int, mtp: bool = False,
+                 record: tuple[str, str] | None = None):
         self.ctx = ctx
+        self.record = record  # (module, variant): store every request's pp/tg rate as a result
         e = ctx.engine
         self.port = ctx.cfg.server_port
         self.argv = [f"{e['bin_dir']}/llama-server", "-m", str(ctx.model_path),
@@ -38,6 +40,9 @@ class LlamaServer:
         ev = parse_print_timing(line)
         if ev:
             self.ctx.server_timing(ev)
+            if self.record and ev.kind in ("prompt", "eval") and ev.tokens:
+                self.ctx.result(self.record[0], 0, self.record[1], "pp" if ev.kind == "prompt" else "tg",
+                                ev.tokens_per_s, "t/s", {"tokens": ev.tokens})
 
     def start(self, timeout: float = 1200) -> None:
         self.ctx.log("runner", "starting llama-server: " + " ".join(self.argv))

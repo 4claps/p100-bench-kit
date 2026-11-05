@@ -82,3 +82,4 @@ td.best { font-weight: 700; color: var(--ok); }
 .kv dd { margin: 0; }
 .uplot { width: 100% !important; }
 @media (max-width: 600px) { main { padding: 10px; } .card { padding: 10px; } }
+.strong { font-weight: 600; }
